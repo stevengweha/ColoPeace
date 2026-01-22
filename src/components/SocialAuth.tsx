@@ -5,7 +5,6 @@ import { useOAuth, useClerk } from "@clerk/clerk-expo";
 import api from '../services/api';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { connectSocket } from '../services/socket';
-import * as Linking from 'expo-linking'; // Indispensable pour la redirection PWA
 
 interface SocialAuthProps {
   onLoginSuccess: (user: any) => void;
@@ -14,11 +13,14 @@ interface SocialAuthProps {
 export default function SocialAuth({ onLoginSuccess }: SocialAuthProps) {
   const [loading, setLoading] = useState(false);
   
-  // Hook pour Google OAuth
+  // Hook Clerk pour l'authentification Google
   const { startOAuthFlow } = useOAuth({ strategy: "oauth_google" });
   
-  // Hook pour gérer la session Clerk globale
+  // Hook Clerk pour gérer la session et la déconnexion
   const { session, signOut } = useClerk();
+
+  // Ton URL de production Vercel
+  const PRODUCTION_URL = "https://colo-peace-w7sy.vercel.app";
 
   const handleGoogleAuth = async () => {
     if (loading) return;
@@ -27,62 +29,60 @@ export default function SocialAuth({ onLoginSuccess }: SocialAuthProps) {
     try {
       let currentSessionId = session?.id;
 
-      // 1️⃣ SI AUCUNE SESSION ACTIVE
+      // 1️⃣ ÉTAPE CLERK : Obtenir une session
       if (!currentSessionId) {
-        console.log("🔄 Lancement du flux Google (Mode Redirect pour PWA)...");
+        console.log("🔄 Lancement de la redirection Google...");
         
-        // On définit l'URL de retour (l'URL actuelle de ta PWA)
-        const redirectUrl = Linking.createURL('/');
-
         const { createdSessionId, setActive } = await startOAuthFlow({
-          redirectUrl: redirectUrl, // Force la redirection plutôt que la pop-up
+          // Force la redirection vers ton domaine Vercel (indispensable pour PWA/Mobile)
+          redirectUrl: Platform.OS === 'web' ? PRODUCTION_URL : undefined,
         });
         
         if (createdSessionId && setActive) {
           await setActive({ session: createdSessionId });
           currentSessionId = createdSessionId;
         }
-      } else {
-        console.log("✅ Session Clerk déjà active :", currentSessionId);
       }
 
-      // 2️⃣ SYNC AVEC LE BACKEND (Bridge Clerk -> MongoDB)
+      // 2️⃣ ÉTAPE BACKEND : Bridge avec ton API Render
       if (currentSessionId) {
-        // @ts-ignore - Récupération du jeton JWT de Clerk
+        // Récupération du jeton sécurisé (JWT) généré par Clerk
+        // @ts-ignore
         const clerkToken = await window.Clerk.session.getToken();
 
+        // Envoi au backend sur Render pour vérification/création d'utilisateur
         const res = await api.post('/auth/clerk-login', { clerkToken });
         const user = res.data.user || res.data;
 
-        // Sauvegarde locale
+        // Sauvegarde persistante de l'utilisateur
         await AsyncStorage.setItem("@colopeace_user", JSON.stringify(user));
         
-        // Initialisation Sockets
+        // Connexion au socket temps réel
         try {
           connectSocket(user._id || user.id);
         } catch (e) {
           console.log("Socket connection error:", e);
         }
 
-        // Succès : on bascule sur l'AppStack
+        // Succès : On informe l'application pour changer d'écran
         onLoginSuccess(user);
       }
     } catch (err: any) {
-      // Gestion de l'erreur "Already signed in"
+      // Gestion spécifique du cas "Déjà connecté"
       if (err.errors?.[0]?.code === "already_signed_in" || err.message?.includes("already signed in")) {
-        console.log("⚠️ Déjà connecté chez Clerk, synchronisation backend...");
+        console.log("⚠️ Session déjà active, synchronisation directe...");
         try {
           // @ts-ignore
           const clerkToken = await window.Clerk.session.getToken();
           const res = await api.post('/auth/clerk-login', { clerkToken });
           onLoginSuccess(res.data.user || res.data);
         } catch (retryErr) {
-          await signOut();
-          Alert.alert("Session expirée", "Veuillez réessayer.");
+          await signOut(); // Nettoyage en cas d'échec
+          Alert.alert("Erreur", "Session expirée. Veuillez réessayer.");
         }
       } else {
         console.error("Détail Erreur OAuth:", err);
-        Alert.alert("Erreur", "La connexion Google a échoué.");
+        Alert.alert("Erreur", "La connexion Google a échoué sur ce navigateur.");
       }
     } finally {
       setLoading(false);
