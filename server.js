@@ -115,17 +115,25 @@ io.on('connection', (socket) => {
   });
 
   // ✅ Gestion de la lecture
-  socket.on('readMessages', (data) => {
-    // data: { conversationId, userId }
-    socket.to(data.conversationId.toString()).emit('markMessagesAsRead', data);
-    // mettre a jour en base read
-    const Message = require('./models/Message');
-    const result = Message.updateMany(
-      { conversationId: data.conversationId, senderId: { $ne: data.userId }, readAt: null },
-      { $set: { readAt: new Date() } }
-    ).exec();
+  socket.on('readMessages', async (data) => {
 
-  });
+    socket.to(data.conversationId.toString()).emit('markMessagesAsRead', data);
+
+    // 2. On enregistre dans MongoDB (on marque comme lu tout ce qui n'est pas à nous)
+  try {
+    const Message = require('./models/Message'); // Vérifie bien le chemin
+    await Message.updateMany(
+      { 
+        conversationId: conversationId, 
+        senderId: { $ne: userId }, 
+        readAt: null 
+      },
+      { $set: { readAt: new Date() } }
+    );
+  } catch (err) {
+    console.error("Erreur mise à jour lecture:", err);
+  }
+});
 
   socket.on('disconnect', () => {
     for (const [userId, sockId] of onlineUsers.entries()) {
