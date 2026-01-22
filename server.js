@@ -116,6 +116,9 @@ io.on('connection', (socket) => {
 
   // ✅ Gestion de la lecture
   socket.on('readMessages', async (data) => {
+    // data: { conversationId, userId }
+    const { conversationId, userId } = data;
+    
 
     socket.to(data.conversationId.toString()).emit('markMessagesAsRead', data);
 
@@ -130,6 +133,7 @@ io.on('connection', (socket) => {
       },
       { $set: { readAt: new Date() } }
     );
+    console.log(`✅ Messages marqués comme lus dans la conversation ${data.conversationId} par l'utilisateur ${data.userId}`);
   } catch (err) {
     console.error("Erreur mise à jour lecture:", err);
   }
