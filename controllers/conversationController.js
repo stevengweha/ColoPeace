@@ -75,3 +75,15 @@ exports.deleteConversation = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// Dans ton controller de conversation, ajoute cette fonction pour filtrer
+exports.getConversationsByUser = async (req, res) => {
+  try {
+    const conversations = await Conversation.find({
+      participants: req.params.userId
+    }).populate('participants', 'name avatarUrl');
+    res.json(conversations);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};

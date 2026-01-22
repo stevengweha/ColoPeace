@@ -56,6 +56,10 @@ const TaskSchema = new Schema(
       default: null,
       maxlength: 1000,
     },
+    score: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true }
 );

@@ -60,3 +60,17 @@ exports.deleteUser = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+exports.savePushSubscription = async (req, res) => {
+  try {
+    const { userId, subscription } = req.body;
+
+    await User.findByIdAndUpdate(userId, {
+      pushSubscription: subscription
+    });
+
+    res.status(200).json({ message: "Subscription enregistrée avec succès" });
+  } catch (err) {
+    res.status(500).json({ error: "Erreur lors de l'enregistrement" });
+  }
+};

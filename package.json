@@ -20,6 +20,9 @@
     "moment": "^2.30.1",
     "mongodb": "^6.17.0",
     "mongoose": "^8.15.2",
-    "socket.io": "^4.8.1"
+    "node-cron": "^4.2.1",
+    "nodemailer": "^7.0.12",
+    "socket.io": "^4.8.1",
+    "web-push": "^3.6.7"
   }
 }

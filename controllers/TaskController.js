@@ -1,335 +1,300 @@
 const Task = require("../models/Task");
 const User = require("../models/User");
 const TaskHistory = require("../models/TaskHistory");
-const moment = require("moment"); 
+const moment = require("moment");
+const mongoose = require("mongoose");
+let io;
 
-// --- Fonctions d'Utilité ---
+exports.setSocketIo = (socketIoInstance) => {
+  io = socketIoInstance;
+};
 
-/**
- * 🔵 Vérifier si les tâches de la semaine existent déjà
- */
-async function weekAlreadyGenerated(weekNumber, year) {
-  const existing = await Task.find({ weekNumber, year });
-  return existing.length > 0;
-}
+// --- 1. CONFIGURATION UNIQUE DES POINTS ---
+// Si tu veux changer les points un jour, tu le fais ici et c'est tout.
+const POINT_SYSTEM = {
+  ON_TIME: 10,
+  LATE: 5,
+  ASSIGNED: 0,
+  MISSED: 0
+};
 
-/**
- * 🔵 Calcule la date limite (dueDate) pour une tâche
- * @param {number} weekNumber Numéro de la semaine ISO
- * @param {number} year Année
- * @param {number} taskIndex Index de la tâche (0=Lundi, 1=Mardi, 2=Mercredi, 3=Jeudi)
- * @returns {Date} Date limite à la fin du jour attribué.
- */
-function calculateDueDate(weekNumber, year, taskIndex) {
-  // Utilise moment pour gérer correctement les semaines ISO
-  const weekStart = moment().year(year).isoWeek(weekNumber).startOf('isoWeek'); // Lundi de la semaine
+// --- 2. FONCTIONS D'UTILITÉ ---
 
-  // dueDate est à minuit (23:59:59) du jour attribué (Lundi + taskIndex)
-  const dueDate = weekStart.add(taskIndex, 'days').endOf('day').toDate();
-  return dueDate;
-}
+const calculateEarnedScore = (isLate) => (isLate ? POINT_SYSTEM.LATE : POINT_SYSTEM.ON_TIME);
 
-/**
- * 🔵 Trouver l'utilisateur avec la charge de travail historique la plus faible
- * @param {Array<User>} users Liste des utilisateurs
- * @returns {User} L'utilisateur ayant le moins de tâches assignées historiquement.
- */
 async function findUserWithLowestLoad(users) {
-  // 1. Récupérer le compte de tâches assignées pour chaque utilisateur
-  const userLoad = await Task.aggregate([
-    { $match: { assignedTo: { $in: users.map(u => u._id) } } },
-    { $group: { _id: "$assignedTo", count: { $sum: 1 } } },
-  ]);
+  const userLoad = await Task.aggregate([
+    { $match: { assignedTo: { $in: users.map(u => u._id) } } },
+    { $group: { _id: "$assignedTo", count: { $sum: 1 } } },
+  ]);
 
-  const loadMap = users.reduce((acc, user) => ({ ...acc, [user._id.toString()]: 0 }), {});
-  userLoad.forEach(item => {
-    loadMap[item._id.toString()] = item.count;
-  });
+  const loadMap = users.reduce((acc, user) => ({ ...acc, [user._id.toString()]: 0 }), {});
+  userLoad.forEach(item => { loadMap[item._id.toString()] = item.count; });
 
-  let lowestLoad = Infinity;
-  let eligibleUser = users[0];
-
-  // Parcours les utilisateurs (déjà mélangés initialement si c'est la première tâche)
-  for (const user of users) { 
-    const currentLoad = loadMap[user._id.toString()];
-    if (currentLoad < lowestLoad) {
-      lowestLoad = currentLoad;
-      eligibleUser = user;
-    }
-  }
-  return eligibleUser;
+  return users.reduce((prev, curr) => 
+    (loadMap[curr._id.toString()] < loadMap[prev._id.toString()] ? curr : prev)
+  );
 }
 
-
-// --- Fonctions d'API (Exports) ---
+// --- 3. EXPORTS DES FONCTIONS D'API ---
 
 /**
- * 🔵 Générer automatiquement les 4 tâches de la semaine (ÉQUITÉ PAR CHARGE MINIMALE)
+ * 🔵 Générer automatiquement les tâches de la semaine
  */
 exports.generateWeeklyTasks = async (req, res) => {
-  try {
-    const weekNumber = req.body.weekNumber || moment().isoWeek();
-    const year = req.body.year || moment().isoWeekYear();
+  try {
+    const weekNumber = req.body.weekNumber || moment().isoWeek();
+    const year = req.body.year || moment().isoWeekYear();
+    const socketIo = req.app.get('socketio') || io; // Sécurité double instance
 
-    if (await weekAlreadyGenerated(weekNumber, year)) {
-      return res.status(400).json({ error: "Les tâches de cette semaine existent déjà." });
-    }
+    const existing = await Task.findOne({ weekNumber, year });
+    if (existing) return res.status(400).json({ error: "Les tâches de cette semaine existent déjà." });
 
-    const users = await User.find();
-    if (users.length < 4) {
-      return res.status(400).json({ error: "Il faut 4 utilisateurs pour générer les tâches." });
-    }
+    const users = await User.find();
+    if (users.length < 4) return res.status(400).json({ error: "Il faut 4 utilisateurs." });
 
-    const taskNames = ["Sol", "Cuisine", "Douche", "Toilettes"];
-    const tasks = [];
+    const taskNames = ["Sol", "Cuisine", "Douche", "Toilettes"];
+    const tasks = [];
+    const shuffledUsers = [...users].sort(() => Math.random() - 0.5); 
+    
+    for (let i = 0; i < taskNames.length; i++) {
+      const assignedUser = await findUserWithLowestLoad(shuffledUsers); 
+      const dueDate = moment().year(year).isoWeek(weekNumber).startOf('isoWeek').add(i, 'days').endOf('day').toDate();
 
-    // 💡 Les utilisateurs sont mélangés une fois pour briser les égalités de charge minimale
-    const shuffledUsers = [...users].sort(() => Math.random() - 0.5); 
-    
-    for (let i = 0; i < taskNames.length; i++) {
-      const taskName = taskNames[i];
+      const task = await Task.create({
+        name: taskNames[i],
+        assignedTo: assignedUser._id,
+        weekNumber,
+        year,
+        dueDate,
+        status: "pending",
+        score: POINT_SYSTEM.ASSIGNED // Initialisé à 0
+      });
 
-      // 🎯 Logique d'ÉQUITÉ: Choix de l'utilisateur avec la charge la plus faible
-      const assignedUser = await findUserWithLowestLoad(shuffledUsers); 
-      
-      // 🎯 DATE FIXE DU BACKEND
-      const dueDate = calculateDueDate(weekNumber, year, i);
+      // Historique de l'assignation (Pas de complétion ici !)
+      await TaskHistory.create({
+        userId: assignedUser._id,
+        taskName: task.name,
+        weekNumber,
+        year,
+        action: "task_assigned",
+        score: POINT_SYSTEM.ASSIGNED
+      });
 
-      const task = await Task.create({
-        name: taskName,
-        assignedTo: assignedUser._id,
-        weekNumber,
-        year,
-        dueDate, // Le backend impose la date
-        status: "pending"
-      });
+      const payload = {
+        title: "Nouvelle tâche ! 📋",
+        body: `Tu es responsable de : ${task.name}`,
+        type: "task",
+        url: "/tasks"
+      };
 
-      await TaskHistory.create({
-        userId: assignedUser._id,
-        taskName,
-        weekNumber,
-        year,
-        action: "assigned"
-      });
+      if (io) {
+        io.emit(`notification_${assignedUser._id}`, payload);
+        console.log("Emission notification tâche assignée");
+      }
+      notificationService.sendNotification(assignedUser._id, payload)
+        .catch(err => console.error("❌ Erreur Web Push silencieuse:", err));
+        console.log("Envoi notification tâche assignée via Web Push", payload);
+      tasks.push(task);
+    }
 
-      tasks.push(task);
-    }
+    
 
-    res.status(201).json({
-      message: "Tâches hebdomadaires générées et attribuées équitablement.",
-      tasks
-    });
-
-  } catch (err) {
-    console.error("Erreur generateWeeklyTasks:", err);
-    res.status(500).json({ error: err.message });
-  }
+    res.status(201).json({ message: "Tâches générées.", tasks });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
 /**
- * 🔵 Marquer une tâche comme complétée (avec vérification de la date et de la preuve)
+ * 🔵 Marquer une tâche comme complétée
  */
 exports.completeTask = async (req, res) => {
-  try {
-    const { taskId } = req.params;
-    const { proofImage, note } = req.body; 
+  try {
+    const { taskId } = req.params;
+    const { proofImage, note } = req.body; 
+    const task = await Task.findById(taskId).populate("assignedTo", "name");
+    if (!task || task.status !== 'pending') {
+        return res.status(400).json({ error: "Tâche introuvable ou déjà validée." });
+    }
 
-    const task = await Task.findById(taskId);
-    if (!task) return res.status(404).json({ error: "Tâche non trouvée" });
+    if (!proofImage) return res.status(400).json({ error: "Preuve image requise." });
 
-    // 🎯 EXIGENCE: Exiger la preuve pour la confirmation
-    if (!proofImage) {
-      return res.status(400).json({ error: "La preuve (proofImage) est requise pour valider la tâche." });
-    }
+    const completionTime = new Date();
+    const isLate = completionTime > task.dueDate;
+    const earnedScore = calculateEarnedScore(isLate);
 
-    // Limiter la complétion aux tâches en cours
-    if (task.status !== 'pending') {
-      return res.status(400).json({ error: `La tâche a déjà le statut: ${task.status}` });
-    }
+    // Mise à jour de la tâche avec le score définitif
+    task.status = "done";
+    task.doneAt = completionTime;
+    task.proofImage = proofImage;
+    task.note = note || "";
+    task.score = earnedScore; 
+    await task.save();
 
-    const completionTime = new Date();
-    
-    // 🎯 VÉRIFICATION DE LA DATE LIMITE
-    if (completionTime > task.dueDate) {
-      // NOTE: Votre modèle doit autoriser le statut 'late' si vous utilisez cette logique.
-      // Si non, le statut restera 'done' mais la vérification du délai est visible dans le rapport.
-      task.status = "done"; // Statut basé sur votre modèle actuel
-      task.isLate = true; // Champ temporaire pour le rapport si 'late' n'est pas dans l'enum
-    } else {
-      task.status = "done"; 
-      task.isLate = false;
-    }
+    // Enregistrement dans l'historique
+    await TaskHistory.create({
+      userId: task.assignedTo._id,
+      taskName: task.name,
+      weekNumber: task.weekNumber,
+      year: task.year,
+      action: isLate ? "completed_late" : "completed_on_time", 
+      score: earnedScore,
+      meta: { proofImage, completionTime }
+    });
 
-    task.doneAt = completionTime;
-    task.proofImage = proofImage;
-    task.note = note || task.note;
+    const payload = {
+      title: "Tâche terminée ! ✅",
+        body: `${task.assignedTo.name} a fini ${task.name} (+${earnedScore} pts)`,
+        type: "task_done",
+        url: "/tasks"
+    };
 
-    await task.save();
+    if (io) {
+      io.emit(`notification_${task.assignedTo._id}`, payload);
+      console.log("Emission notification tâche terminée");
+    }
+    notificationService.sendNotification(task.assignedTo._id, payload)
+      .catch(err => console.error("❌ Erreur Web Push silencieuse:", err));
+      console.log("Envoi notification tâche terminée via Web Push", payload);
 
-    // Enregistrement dans l'historique (plus précis pour le rapport)
-    await TaskHistory.create({
-      userId: task.assignedTo,
-      taskName: task.name,
-      weekNumber: task.weekNumber,
-      year: task.year,
-      action: task.isLate ? "completed_late" : "completed_on_time", 
-      meta: { proofImage, completionTime }
-    });
-
-    res.json({
-      message: `Tâche complétée ${task.isLate ? '(en retard)' : '(à temps)'} avec succès.`,
-      task
-    });
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    res.json({ message: "Tâche validée.", task });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
 /**
- * 🔵 Tâches manquées : Marquer les tâches en retard qui n'ont pas été faites (CRON)
+ * 🔵 Stats Dashboard (Rapide via somme du champ score)
  */
-exports.markMissedTasks = async () => {
-  try {
-    const now = new Date();
+exports.getUserStats = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(userId)) return res.status(400).json({ error: "ID invalide" });
 
-    // Trouver les tâches 'pending' dont la dueDate est passée
-    const missedTasks = await Task.find({
-      status: 'pending',
-      dueDate: { $lt: now } 
-    });
+    const stats = await Task.aggregate([
+      { $match: { assignedTo: new mongoose.Types.ObjectId(userId) } },
+      { $group: {
+          _id: null,
+          totalAssigned: { $sum: 1 },
+          done: { $sum: { $cond: [{ $eq: ["$status", "done"] }, 1, 0] } },
+          score: { $sum: "$score" }, // Somme directe du champ score
+          pending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } }
+      }}
+    ]);
 
-    for (const task of missedTasks) {
-      // NOTE: Si 'missed' n'est pas dans votre enum Mongoose, le statut restera 'pending',
-      // mais le rapport les traitera comme manquées. Si vous mettez à jour l'enum, changez ceci:
-      // task.status = 'missed'; 
-      await task.save();
-
-      await TaskHistory.create({
-        userId: task.assignedTo,
-        taskName: task.name,
-        weekNumber: task.weekNumber,
-        year: task.year,
-        action: "missed_deadline",
-      });
-    }
-
-    console.log(`${missedTasks.length} tâche(s) passée(s) la date limite marquée(s) comme manquée(s) dans l'historique.`);
-    return missedTasks.length;
-  } catch (err) {
-    console.error("Erreur markMissedTasks:", err);
-    return 0;
-  }
-};
-
-
-/**
- * 🔵 Obtenir toutes les tâches d'une semaine donnée
- */
-exports.getWeeklyTasks = async (req, res) => {
-  try {
-    const { weekNumber, year } = req.params;
-
-    const tasks = await Task.find({ weekNumber, year })
-      .populate("assignedTo", "name avatarUrl");
-
-    res.json(tasks);
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    res.json(stats[0] || { totalAssigned: 0, done: 0, score: 0, pending: 0 });
+  } catch (err) {
+    res.status(500).json({ error: "Erreur stats." });
+  }
 };
 
 /**
- * 🔵 Rapport d'équité et de performance
+ * 🔵 Classement global
  */
 exports.getEquityReport = async (req, res) => {
-  try {
-    const now = new Date();
-    
-    // Agrégation pour calculer la performance par utilisateur
-    const report = await Task.aggregate([
-      { 
-        $match: {} // Inclure toutes les tâches historiques
-      },
-      {
-        $group: {
-          _id: "$assignedTo",
-          totalAssigned: { $sum: 1 },
-          // Si status='done' ET doneAt <= dueDate
-          doneOnTime: { $sum: { $cond: [{ $and: [{ $eq: ["$status", "done"] }, { $lte: ["$doneAt", "$dueDate"] }] }, 1, 0] } },
-          // Si status='done' ET doneAt > dueDate
-          late: { $sum: { $cond: [{ $and: [{ $eq: ["$status", "done"] }, { $gt: ["$doneAt", "$dueDate"] }] }, 1, 0] } },
-          // Si status='pending' ET dueDate < now
-          missed: { $sum: { $cond: [{ $and: [{ $eq: ["$status", "pending"] }, { $lt: ["$dueDate", now] }] }, 1, 0] } },
-        },
-      },
-      {
-        $lookup: { 
-          from: "users",
-          localField: "_id",
-          foreignField: "_id",
-          as: "user"
-        }
-      },
-      { $unwind: "$user" },
-      {
-        $project: {
-          _id: 0,
-          name: "$user.name",
-          totalAssigned: 1,
-          doneOnTime: 1,
-          late: 1,
-          missed: 1,
-          successRate: { 
-            $divide: [{ $add: ["$doneOnTime", "$late"] }, "$totalAssigned"] 
-          }
-        }
-      }
-    ]);
-
-    res.json(report);
-
-  } catch (err) {
-    console.error("Erreur getEquityReport:", err);
-    res.status(500).json({ error: err.message });
-  }
+  try {
+    const report = await Task.aggregate([
+      {
+        $group: {
+          _id: "$assignedTo",
+          totalAssigned: { $sum: 1 },
+          score: { $sum: "$score" },
+          doneCount: { $sum: { $cond: [{ $eq: ["$status", "done"] }, 1, 0] } },
+          // 🎯 On compte les retards en regardant qui a reçu 5 points
+          lateCount: { 
+            $sum: { $cond: [{ $and: [{ $eq: ["$status", "done"] }, { $eq: ["$score", 5] }] }, 1, 0] } 
+          },
+          // 🎯 On compte les "à temps" en regardant qui a reçu 10 points
+          onTimeCount: { 
+            $sum: { $cond: [{ $and: [{ $eq: ["$status", "done"] }, { $eq: ["$score", 10] }] }, 1, 0] } 
+          }
+        }
+      },
+      { $lookup: { from: "users", localField: "_id", foreignField: "_id", as: "user" } },
+      { $unwind: "$user" },
+      { $project: {
+          _id: 0,
+          name: "$user.name",
+          avatar: "$user.avatarUrl",
+          score: 1,
+          doneOnTime: "$onTimeCount", // 🎯 Envoi au Front
+          late: "$lateCount",         // 🎯 Envoi au Front
+          totalAssigned: 1,
+          successRate: { 
+            $cond: [{ $gt: ["$totalAssigned", 0] }, { $divide: ["$doneCount", "$totalAssigned"] }, 0] 
+          }
+      }},
+      { $sort: { score: -1 } }
+    ]);
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
 /**
  * 🔵 Récupérer les tâches d'un utilisateur
  */
 exports.getTasksByUser = async (req, res) => {
-  // ... (Code inchangé) ...
-  try {
-    const tasks = await Task.find({ assignedTo: req.params.userId })
-      .populate("assignedTo", "name avatarUrl")
-      .lean();
-
-    // Ajoute une date par défaut si manquante
-    tasks.forEach(t => {
-      if (!t.dueDate) t.dueDate = new Date().toISOString();
-    });
-
-    res.json(tasks);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  try {
+    const tasks = await Task.find({ assignedTo: req.params.userId })
+      .sort({ dueDate: 1 })
+      .populate("assignedTo", "name avatarUrl")
+      .lean();
+    res.json(tasks);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
+/**
+ * 🔵 Obtenir toutes les tâches d'une semaine
+ */
+exports.getWeeklyTasks = async (req, res) => {
+  try {
+    const { weekNumber, year } = req.params;
+    const tasks = await Task.find({ weekNumber, year }).populate("assignedTo", "name avatarUrl");
+    res.json(tasks);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
 
 /**
  * 🔵 Supprimer une tâche
  */
 exports.deleteTask = async (req, res) => {
-  // ... (Code inchangé) ...
-  try {
-    const task = await Task.findByIdAndDelete(req.params.id);
-    if (!task) return res.status(404).json({ error: "Tâche non trouvée" });
+  try {
+    const task = await Task.findByIdAndDelete(req.params.id);
+    if (!task) return res.status(404).json({ error: "Tâche non trouvée" });
+    res.json({ message: "Tâche supprimée." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
 
-    res.json({ message: "Tâche supprimée avec succès" });
+/**
+ * 🔵 Gestion des tâches manquées
+ */
+exports.markMissedTasks = async (req, res) => {
+  try {
+    const missedTasks = await Task.find({ status: 'pending', dueDate: { $lt: new Date() } });
 
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    for (const task of missedTasks) {
+      await TaskHistory.create({
+        userId: task.assignedTo,
+        taskName: task.name,
+        weekNumber: task.weekNumber,
+        year: task.year,
+        action: "missed_deadline",
+        score: POINT_SYSTEM.MISSED
+      });
+      // Optionnel: task.status = 'missed'; await task.save();
+    }
+    if (res) return res.json({ message: "Vérification terminée", missedCount: missedTasks.length });
+    return missedTasks.length;
+  } catch (err) {
+    if (res) return res.status(500).json({ error: err.message });
+  }
 };

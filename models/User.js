@@ -6,6 +6,10 @@ const userSchema = new mongoose.Schema({
   password: String,
   phone: String,
   avatarUrl: String,
+  pushSubscription: {
+    type: Object,
+    default: null
+  }
 }, { timestamps: true });
 
 // Méthode publique pour renvoyer les champs safe

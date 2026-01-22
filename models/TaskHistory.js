@@ -1,11 +1,6 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
-/**
- * TaskHistory keeps a simple log to prevent repetition and for audit.
- * Each entry indicates that user X had taskName on weekNumber/year (assigned or completed).
- */
-
 const TaskHistorySchema = new Schema(
   {
     userId: {
@@ -30,13 +25,17 @@ const TaskHistorySchema = new Schema(
     },
     action: {
       type: String,
-      enum: ["assigned", "completed", "reassigned"],
+      enum: ["assigned", "completed_on_time", "completed_late", "missed_deadline", "reassigned"], 
       default: "assigned",
     },
     meta: {
       // champ libre pour stocker info (ex: image url, commentaire)
       type: Schema.Types.Mixed,
       default: null,
+    },
+    score: {
+      type: Number,
+      default: 0,
     },
   },
   { timestamps: true }
