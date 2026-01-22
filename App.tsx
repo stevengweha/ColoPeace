@@ -84,11 +84,15 @@ export default function App() {
  const triggerNotification = (data) => {
   if (!data) return;
 
-  // 1. On prévient le Service Worker qu'on gère déjà la notif in-app
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
-      type: 'STOP_NOTIFICATION',
-      tag: data.conversationId || 'chat-notif'
+  // 🛡️ SIGNAL DE BLOCAGE AU SERVICE WORKER
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.ready.then((registration) => {
+      if (registration.active) {
+        registration.active.postMessage({
+          type: 'STOP_NOTIFICATION',
+          tag: data.conversationId?.toString() || 'chat-notif'
+        });
+      }
     });
   }
 
