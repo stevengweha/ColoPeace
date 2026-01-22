@@ -43,6 +43,11 @@ const userController = require('./controllers/userController');
 const taskController = require('./controllers/TaskController');
 const conversationController = require('./controllers/conversationController');
 const messageController = require('./controllers/messageController');
+const notificationService = require('./services/notification');
+
+// ==================
+// Définition des routes
+// ============
 
 // Injection de Socket.io dans les contrôleurs
 messageController.setSocketIo(io);
@@ -181,7 +186,6 @@ app.post('/test-email', async (req, res) => {
 });
 
 // gestion des notificatioms
-const notificationService = require('./services/notification');
 
 
 // Lancement du serveur

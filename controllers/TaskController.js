@@ -4,6 +4,7 @@ const TaskHistory = require("../models/TaskHistory");
 const moment = require("moment");
 const mongoose = require("mongoose");
 let io;
+const notificationService = require("../services/notification");
 
 exports.setSocketIo = (socketIoInstance) => {
   io = socketIoInstance;
