@@ -2,25 +2,21 @@
 // public/sw.js - Service Worker ColoPeace
 // ==========================================
 
-const CACHE_NAME = 'colopeace-v3'; // Augmente ce chiffre (v3, v4...) pour forcer un nettoyage
+const CACHE_NAME = 'colopeace-v3'; 
 
-// 1. GESTION DES FICHIERS (Corrige la mise à jour et la lenteur)
+// 1. GESTION DES FICHIERS
 self.addEventListener('fetch', (event) => {
-  // On ne touche pas aux appels API et aux Sockets
   if (event.request.url.includes('/api/') || event.request.url.includes('socket.io')) {
     return;
   }
-
-  // On demande toujours au réseau en priorité
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // On met à jour le cache avec la version fraîche
         const resClone = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, resClone));
         return response;
       })
-      .catch(() => caches.match(event.request)) // Si hors-ligne, on utilise le cache
+      .catch(() => caches.match(event.request))
   );
 });
 
@@ -28,7 +24,6 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('install', () => self.skipWaiting());
 
 self.addEventListener('activate', (event) => {
-  // Supprime les anciens caches périmés
   event.waitUntil(
     caches.keys().then((keys) => Promise.all(
       keys.map((key) => {
@@ -39,7 +34,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(clients.claim());
 });
 
-// 3. ÉCOUTE DES NOTIFICATIONS PUSH
+// 3. ÉCOUTE DES NOTIFICATIONS PUSH (Avec filtre anti-doublon)
 self.addEventListener('push', (event) => {
   let data = { title: 'ColoPeace', body: 'Nouveau message reçu' };
   if (event.data) {
@@ -50,16 +45,31 @@ self.addEventListener('push', (event) => {
     }
   }
 
-  const options = {
-    body: data.body,
-    icon: '/logo.png',
-    badge: '/logo.png',
-    tag: data.type || 'default',
-    renotify: true,
-    data: { url: data.url || '/' }
-  };
+  // On vérifie si l'app est ouverte et visible avant d'afficher la notif système
+  const promiseChain = clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true
+  }).then((windowClients) => {
+    // Est-ce qu'une fenêtre de l'app est actuellement au premier plan ?
+    const isAppVisible = windowClients.some(client => client.visibilityState === 'visible');
 
-  event.waitUntil(self.registration.showNotification(data.title, options));
+    if (isAppVisible) {
+      console.log("🚫 App visible : on laisse le Socket gérer la notif in-app.");
+      return; // On stoppe ici, pas de notification système
+    }
+
+    // Si l'app est fermée ou en arrière-plan, on affiche la notif
+    return self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/logo.png',
+      badge: '/logo.png',
+      tag: data.type || 'default',
+      renotify: true,
+      data: { url: data.url || '/' }
+    });
+  });
+
+  event.waitUntil(promiseChain);
 });
 
 // 4. CLIC SUR LA NOTIFICATION

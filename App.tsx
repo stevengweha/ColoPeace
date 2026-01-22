@@ -80,42 +80,53 @@ export default function App() {
   }, []);
 
   // 🎯 FONCTION POUR AFFICHER LES NOTIFICATIONS IN-APP (Via Sockets)
-  const triggerNotification = (data: any) => {
-    console.log("📩 RÉCEPTION SOCKET :", data.type, "|", data.title);
-    // Protection vibration (certains navigateurs bloquent sans clic préalable)
-    try {
-      Vibration.vibrate(150);
-    } catch (e) {
-      console.log("Vibration non supportée ou bloquée");
-    }
+ const triggerNotification = (data) => {
+  try { Vibration.vibrate([0, 150, 100, 150]); } catch (e) {}
 
-    const cleanId = data.conversationId ? data.conversationId.toString() : null;
-
-    showMessage({
-      message: data.title,
-      description: data.body,
-      type: "success",
-      backgroundColor: data.type === "chat" ? "#2E86C1" : "#205C3B",
-      color: "#fff",
-      icon: data.type === "chat" ? "info" : "success",
-      duration: 5000,
-      floating: true,
-      style: { 
-        borderRadius: 25, 
-        marginHorizontal: 15,
-        marginTop: Platform.OS === 'ios' ? 10 : 30,
-        elevation: 10,
-      },
-      titleStyle: { fontWeight: '800', fontSize: 16 },
-      onPress: () => {
-        if (data.type === "chat") {
-          navigationRef.current?.navigate("Chat", { id: cleanId, title: "Discussion" });
-        } else if (data.type === "task" || data.type === "task_done") {
-          navigationRef.current?.navigate("Tasks");
-        }
+  showMessage({
+    message: data.title,
+    description: data.body,
+    type: "default", // On met default pour personnaliser totalement la couleur
+    backgroundColor: data.type === "chat" ? "#2E86C1" : "#205C3B", 
+    color: "#FFFFFF",
+    duration: 4000,
+    floating: true, // Pour que la notif "flotte" au lieu de coller le bord
+    icon: (props) => (
+      <Ionicons 
+        name={data.type === "chat" ? "chatbubble-ellipses" : "notifications-outline"} 
+        size={24} 
+        color="white" 
+        style={{ marginRight: 10 }} 
+      />
+    ),
+    style: {
+      borderRadius: 20,
+      marginHorizontal: 10,
+      marginTop: Platform.OS === 'ios' ? 20 : 40,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.2)',
+      elevation: 10, // Ombre sur Android
+      shadowColor: "#000", // Ombre sur iOS
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 5,
+    },
+    titleStyle: {
+      fontWeight: "bold",
+      fontSize: 16,
+    },
+    textStyle: {
+      fontSize: 14,
+    },
+    onPress: () => {
+      if (data.type === "chat") {
+        navigationRef.current?.navigate("Chat", { id: data.conversationId?.toString(), title: "Discussion" });
+      } else {
+        navigationRef.current?.navigate("Tasks");
       }
-    });
-  };
+    }
+  });
+};
 
   // 2️⃣ Gestion des Sockets & Abonnement Push
   useEffect(() => {
