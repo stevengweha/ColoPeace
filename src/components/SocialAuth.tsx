@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useOAuth, useClerk } from "@clerk/clerk-expo";
 import api from '../services/api';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { connectSocket } from '../services/socket';
+import * as Linking from 'expo-linking'; // Indispensable pour la redirection PWA
 
 interface SocialAuthProps {
   onLoginSuccess: (user: any) => void;
@@ -26,10 +27,16 @@ export default function SocialAuth({ onLoginSuccess }: SocialAuthProps) {
     try {
       let currentSessionId = session?.id;
 
-      // 1️⃣ SI AUCUNE SESSION ACTIVE : On lance le flux Google
+      // 1️⃣ SI AUCUNE SESSION ACTIVE
       if (!currentSessionId) {
-        console.log("🔄 Lancement du flux Google OAuth...");
-        const { createdSessionId, setActive } = await startOAuthFlow();
+        console.log("🔄 Lancement du flux Google (Mode Redirect pour PWA)...");
+        
+        // On définit l'URL de retour (l'URL actuelle de ta PWA)
+        const redirectUrl = Linking.createURL('/');
+
+        const { createdSessionId, setActive } = await startOAuthFlow({
+          redirectUrl: redirectUrl, // Force la redirection plutôt que la pop-up
+        });
         
         if (createdSessionId && setActive) {
           await setActive({ session: createdSessionId });
@@ -57,23 +64,21 @@ export default function SocialAuth({ onLoginSuccess }: SocialAuthProps) {
           console.log("Socket connection error:", e);
         }
 
-        // On informe le parent (Login.tsx) pour switcher d'écran
+        // Succès : on bascule sur l'AppStack
         onLoginSuccess(user);
       }
     } catch (err: any) {
-      // Gestion de l'erreur "Already signed in" au cas où le hook session n'a pas suffi
+      // Gestion de l'erreur "Already signed in"
       if (err.errors?.[0]?.code === "already_signed_in" || err.message?.includes("already signed in")) {
-        console.log("⚠️ Déjà connecté, tentative de récupération forcée...");
+        console.log("⚠️ Déjà connecté chez Clerk, synchronisation backend...");
         try {
           // @ts-ignore
           const clerkToken = await window.Clerk.session.getToken();
           const res = await api.post('/auth/clerk-login', { clerkToken });
           onLoginSuccess(res.data.user || res.data);
         } catch (retryErr) {
-          console.error("Erreur lors de la récupération forcée:", retryErr);
-          // En dernier recours, on déconnecte Clerk pour repartir propre
           await signOut();
-          Alert.alert("Session expirée", "Veuillez réessayer la connexion.");
+          Alert.alert("Session expirée", "Veuillez réessayer.");
         }
       } else {
         console.error("Détail Erreur OAuth:", err);
