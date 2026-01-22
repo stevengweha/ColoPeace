@@ -52,9 +52,12 @@ exports.createMessage = async (req, res) => {
         io.emit(`notification_${recipientId}`, payload);
       }
 
-      // 2. SIGNAL WEB PUSH
-      notificationService.sendNotification(recipientId, payload)
-        .catch(err => console.error("❌ Erreur Web Push silencieuse:", err));
+     // 2. SIGNAL WEB PUSH (Retardé de 2 secondes)
+      // Ce délai permet au SW de recevoir le 'STOP_NOTIFICATION' avant que le Push n'arrive
+      setTimeout(() => {
+        notificationService.sendNotification(recipientId, payload)
+          .catch(err => console.error("❌ Erreur Web Push silencieuse:", err));
+      }, 2500);
             console.log("Message créé et notifications envoyées.", payload);
 
     }
