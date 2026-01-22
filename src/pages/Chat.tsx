@@ -52,9 +52,16 @@ export default function Chat() {
       }
     };
 
-    const handleRead = () => {
-      setMessages(prev => prev.map(m => ({ ...m, read: true })));
-    };
+    const handleRead = (data) => {
+  setMessages(prev => prev.map(m => {
+    // Si c'est MON message et qu'il n'a pas encore de date de lecture
+    const isMine = (m.senderId?._id || m.senderId) === (user?._id || user?.id);
+      if (isMine && !m.readAt) {
+       return { ...m, readAt: new Date().toISOString() };
+     }
+      return m;
+     }));
+     };
 
     socket.on('receiveMessage', handleReceive);
     socket.on('displayTyping', handleTyping);
@@ -93,9 +100,9 @@ export default function Chat() {
           {isMine && (
             <View style={styles.statusLine}>
               <Ionicons 
-                name={item.read ? "checkmark-done" : "checkmark"} 
+                name={item.readAt ? "checkmark-done" : "checkmark"} 
                 size={16} 
-                color={item.read ? "#34B7F1" : "#999"} 
+                color={item.readAt ? "#07e71a" : "#999"} 
               />
             </View>
           )}
