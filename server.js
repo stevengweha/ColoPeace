@@ -43,7 +43,6 @@ const userController = require('./controllers/userController');
 const taskController = require('./controllers/TaskController');
 const conversationController = require('./controllers/conversationController');
 const messageController = require('./controllers/messageController');
-const notificationService = require('./services/notification');
 
 // ==================
 // Définition des routes
