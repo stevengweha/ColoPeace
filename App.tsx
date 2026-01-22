@@ -28,6 +28,13 @@ if (Platform.OS === 'web' && typeof navigator !== 'undefined' && 'serviceWorker'
       .then(reg => console.log('✅ Service Worker enregistré (Portée:', reg.scope, ')'))
       .catch(err => console.error('❌ Erreur SW:', err));
   });
+
+  // Detecter si une nouvelle version du SW est disponible
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    console.log('🔄 Nouveau Service Worker en contrôle, rechargement de la page...');
+    window.location.reload();
+  });
+
 }
 
 // 🎯 RÉFÉRENCE DE NAVIGATION GLOBALE
@@ -75,7 +82,6 @@ export default function App() {
   // 🎯 FONCTION POUR AFFICHER LES NOTIFICATIONS IN-APP (Via Sockets)
   const triggerNotification = (data: any) => {
     console.log("📩 RÉCEPTION SOCKET :", data.type, "|", data.title);
-    
     // Protection vibration (certains navigateurs bloquent sans clic préalable)
     try {
       Vibration.vibrate(150);
@@ -116,9 +122,18 @@ export default function App() {
     if (user) {
       const userId = user._id || user.id;
 
+      // 🚀 RÉVEIL DU CHAT : Se reconnecter quand l'utilisateur revient sur l'app
+      const handleFocus = () => {
+        if (!socket.connected) {
+          console.log("🔌 Reconnexion forcée...");
+          socket.connect();
+        }
+      };
+
       // 📲 Activer le Push Système sur le Web
       if (Platform.OS === 'web') {
         subscribeUserToPush(userId);
+        window.addEventListener('focus', handleFocus);
       }
 
       const socket = getSocket();

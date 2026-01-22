@@ -58,7 +58,7 @@ export default function Chat() {
 
     socket.on('receiveMessage', handleReceive);
     socket.on('displayTyping', handleTyping);
-    socket.on('messagesMarkedAsRead', handleRead);
+    socket.on('markMessagesAsRead', handleRead);
 
     // Charger l'historique
     api.get(`/messages/conversation/${conversationIdStr}`).then(r => setMessages(r.data));
@@ -66,7 +66,7 @@ export default function Chat() {
     return () => { 
       socket.off('receiveMessage', handleReceive); 
       socket.off('displayTyping', handleTyping);
-      socket.off('messagesMarkedAsRead', handleRead);
+      socket.off('markMessagesAsRead', handleRead);
     };
   }, [conversationIdStr, user]);
 
