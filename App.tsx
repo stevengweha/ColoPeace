@@ -82,16 +82,26 @@ export default function App() {
 
   // 🎯 FONCTION POUR AFFICHER LES NOTIFICATIONS IN-APP (Via Sockets)
  const triggerNotification = (data) => {
+  if (!data) return;
+
+  // 1. On prévient le Service Worker qu'on gère déjà la notif in-app
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({
+      type: 'STOP_NOTIFICATION',
+      tag: data.conversationId || 'chat-notif'
+    });
+  }
+
   try { Vibration.vibrate([0, 150, 100, 150]); } catch (e) {}
 
   showMessage({
-    message: data.title,
-    description: data.body,
-    type: "default", // On met default pour personnaliser totalement la couleur
+    message: data.title || "Message",
+    description: data.body || "",
+    type: "default",
     backgroundColor: data.type === "chat" ? "#2E86C1" : "#205C3B", 
     color: "#FFFFFF",
     duration: 4000,
-    floating: true, // Pour que la notif "flotte" au lieu de coller le bord
+    floating: true,
     icon: (props) => (
       <Ionicons 
         name={data.type === "chat" ? "chatbubble-ellipses" : "notifications-outline"} 
@@ -104,20 +114,7 @@ export default function App() {
       borderRadius: 20,
       marginHorizontal: 10,
       marginTop: Platform.OS === 'ios' ? 20 : 40,
-      borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.2)',
-      elevation: 10, // Ombre sur Android
-      shadowColor: "#000", // Ombre sur iOS
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 5,
-    },
-    titleStyle: {
-      fontWeight: "bold",
-      fontSize: 16,
-    },
-    textStyle: {
-      fontSize: 14,
+      elevation: 10,
     },
     onPress: () => {
       if (data.type === "chat") {
@@ -133,6 +130,8 @@ export default function App() {
   useEffect(() => {
     if (user) {
       const userId = user._id || user.id;
+      const socket = getSocket();
+      const userChannel = `notification_${userId}`;
 
       // 🚀 RÉVEIL DU CHAT : Se reconnecter quand l'utilisateur revient sur l'app
       const handleFocus = () => {
@@ -141,15 +140,11 @@ export default function App() {
           socket.connect();
         }
       };
-
       // 📲 Activer le Push Système sur le Web
       if (Platform.OS === 'web') {
         subscribeUserToPush(userId);
         window.addEventListener('focus', handleFocus);
       }
-
-      const socket = getSocket();
-      const userChannel = `notification_${userId}`;
 
       console.log("🔌 Connexion Sockets actives pour :", user.name);
       socket.emit("userOnline", userId);
