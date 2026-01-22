@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import React from "react";
 import { Platform, Text, TouchableOpacity } from "react-native";
+import { Clerk } from "@clerk/clerk-expo"; // Assure-toi d'avoir installé le SDK Clerk
 
 export default function LogoutButton() {
   const router = useRouter();
@@ -12,6 +13,10 @@ export default function LogoutButton() {
       if (!confirm) return;
 
       await AsyncStorage.removeItem("user");
+      // deconnexion clerk 
+      await Clerk.signOut();
+      
+
       localStorage.removeItem("user"); // sécurité pour web
       router.replace("/auth/login");
     } else {

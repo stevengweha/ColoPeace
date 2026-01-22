@@ -1,8 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'https://colopeace.onrender.com/api', // adapter par IP si mobile
-  headers: { 'Content-Type': 'application/json' },
-});
+  baseURL: 'http://192.168.1.115:5001/api', // adapter par IP si mobile
+  });
 
 export default api;

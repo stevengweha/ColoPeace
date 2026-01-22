@@ -1,8 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState, useContext } from "react";
 import {
-  Dimensions,
-  Image,
   Modal,
   Pressable,
   StyleSheet,
@@ -10,35 +8,54 @@ import {
   TouchableOpacity,
   View,
   Platform,
-  Alert
+  Alert,
+  Image
 } from "react-native";
 import HomeRedirectButton from "./HomeRedirectButton";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
 import { UserContext } from "../../App";
 
+// 🔐 IMPORT CLERK
+import { useClerk } from "@clerk/clerk-expo";
+
 export default function CustomHeader() {
   const navigation = useNavigation<any>();
   const { user, setUser } = useContext(UserContext);
-  // 🎯 Correction : On vérifie si l'objet user existe vraiment
-  const isUserConnected = user !== null && user !== undefined;
+  
+  // 🔐 HOOK CLERK POUR LE LOGOUT
+  const { signOut } = useClerk();
 
+  const isUserConnected = user !== null && user !== undefined;
   const [menuVisible, setMenuVisible] = useState(false);
   const toggleMenu = () => setMenuVisible(!menuVisible);
 
   const performLogout = async () => {
     try {
-      // 🎯 Correction : Utilise la même clé que dans ton App.js
+      // 1️⃣ Déconnexion de Clerk (essentiel pour Google Auth)
+      if (isUserConnected) {
+        await signOut();
+      }
+
+      // 2️⃣ Nettoyage AsyncStorage
       await AsyncStorage.removeItem("@colopeace_user");
+      await AsyncStorage.removeItem("@colopeace_token"); // Au cas où tu stockes le token séparément
+      
+      // 3️⃣ Reset de l'état global
       setUser(null);
       setMenuVisible(false);
       
+      // La navigation va switcher automatiquement vers AuthStack via App.tsx
+      // Mais on peut forcer le reset par sécurité
       navigation.reset({
         index: 0,
         routes: [{ name: "Login" }],
       });
+
+      console.log("✅ Déconnexion complète réussie");
     } catch (e) {
       console.error("Erreur déconnexion:", e);
+      Alert.alert("Erreur", "Impossible de vous déconnecter proprement.");
     }
   };
 
@@ -71,13 +88,11 @@ export default function CustomHeader() {
     }
   };
 
-  // 📝 Construction de la liste du menu
   const menuItems = [
     ...(isUserConnected ? [{ key: "parametres", label: "Mon profil" }] : []),
     { key: "accessibilite", label: "Accessibilité" },
     { key: "apropos", label: "À propos" },
     { key: "nouscontacter", label: "Nous contacter" },
-    // 🎯 Le bouton Logout s'affiche ici si isUserConnected est vrai
     ...(isUserConnected ? [{ key: "deconnexion", label: "Déconnexion" }] : [])
   ];
 
@@ -93,10 +108,11 @@ export default function CustomHeader() {
         />
 
         <TouchableOpacity onPress={toggleMenu} style={styles.iconButton}>
-          {/* 🎯 Petit plus : Affiche l'initiale de l'user ou l'icône menu */}
           <View style={styles.menuTrigger}>
             {isUserConnected && (
-               <Text style={styles.userNameText}>{user.name?.charAt(0)}</Text>
+               <Text style={styles.userNameText}>
+                 {user.name?.charAt(0).toUpperCase()}
+               </Text>
             )}
             <Ionicons name="menu-outline" size={28} color="#205C3B" />
           </View>
@@ -118,7 +134,6 @@ export default function CustomHeader() {
                 style={({ pressed }) => [
                   styles.menuItem,
                   pressed && styles.menuItemPressed,
-                  // Style spécial pour la déconnexion en rouge
                   item.key === "deconnexion" && styles.logoutItem
                 ]}
               >
@@ -152,7 +167,19 @@ const styles = StyleSheet.create({
   logo: { height: 45, width: 45, borderRadius: 22.5 },
   iconButton: { padding: 6 },
   menuTrigger: { flexDirection: 'row', alignItems: 'center' },
-  userNameText: { marginRight: 8, fontWeight: 'bold', color: '#205C3B', fontSize: 16 },
+  userNameText: { 
+    marginRight: 8, 
+    fontWeight: 'bold', 
+    color: '#205C3B', 
+    fontSize: 16,
+    backgroundColor: '#E8F5E9',
+    width: 30,
+    height: 30,
+    textAlign: 'center',
+    lineHeight: 30,
+    borderRadius: 15,
+    overflow: 'hidden'
+  },
   modalBackground: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.2)",
@@ -175,7 +202,6 @@ const styles = StyleSheet.create({
   menuItem: { paddingVertical: 14, paddingHorizontal: 20 },
   menuItemPressed: { backgroundColor: "#f0f0f0" },
   menuItemText: { fontSize: 16, color: "#333", fontWeight: '500' },
-  // Style rouge pour la déconnexion
   logoutItem: { borderTopWidth: 1, borderTopColor: '#eee', marginTop: 5 },
   logoutText: { color: "#E74C3C", fontWeight: 'bold' }
 });

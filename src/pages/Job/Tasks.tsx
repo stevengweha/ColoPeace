@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { 
   View, Text, TouchableOpacity, TextInput, StyleSheet, 
-  ActivityIndicator, Alert, ScrollView, Image, SafeAreaView, Platform 
+  ActivityIndicator, Alert, ScrollView, Image, SafeAreaView, Platform, Dimensions 
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from 'expo-image-picker';
 import moment from "moment";
 import 'moment/locale/fr';
 import api from "../../services/api";
 
 moment.locale('fr');
+
+const { width } = Dimensions.get("window");
 
 // --- Types ---
 type User = { _id: string; name: string; avatarUrl?: string };
@@ -137,53 +140,71 @@ export default function TaskRoot({ user }: { user: any }) {
   );
 }
 
-function TaskDetailView({ task, currentUserId, onBack, onSuccess }: { task: Task, currentUserId: string, onBack: () => void, onSuccess: () => void }) {
+export function TaskDetailView({ task, currentUserId, onBack, onSuccess }: { task: Task, currentUserId: string, onBack: () => void, onSuccess: () => void }) {
   const [note, setNote] = useState(task.note || "");
   const [image, setImage] = useState<string | null>(task.proofImage || null);
   const [submitting, setSubmitting] = useState(false);
+  const [imageLoading, setImageLoading] = useState(false); // État pour le loader d'image
+
   const isOwner = task.assignedTo?._id === currentUserId;
 
-  const handleComplete = async () => {
-  if (!image) {
-    const errorMsg = "Veuillez prendre une photo de preuve.";
-    Platform.OS === 'web' ? window.alert(errorMsg) : Alert.alert("Erreur", errorMsg);
-    return;
-  }
-  
-  setSubmitting(true);
-  try {
-    // 1. Envoi au backend (note et image)
-    const res = await api.put(`/tasks/complete/${task._id}`, { proofImage: image, note });
-
-    // 2. Récupération des données fraîches du serveur
-    // Le backend renvoie { message, task: { score, note, ... } }
-    const scoreGagne = res.data.task.score;
-    const noteValidee = res.data.task.note || "Aucune";
-
-    // 3. Préparation du message de succès
-    const succesMessage = `Score : +${scoreGagne} points !\nNote : ${noteValidee}`;
-
-    if (Platform.OS === 'web') {
-      window.alert(`Félicitations ! 🎉\n${succesMessage}`);
-      onSuccess();
-    } else {
-      Alert.alert(
-        "Félicitations ! 🎉",
-        succesMessage,
-        [{ text: "OK", onPress: () => onSuccess() }]
-      );
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert("Permission refusée", "Nous avons besoin de la caméra pour valider la tâche.");
+      return;
     }
-  } catch (e: any) {
-    console.error("Erreur PUT:", e);
-    const errorMsg = e.response?.data?.error || "Impossible de valider.";
-    Platform.OS === 'web' ? window.alert(errorMsg) : Alert.alert("Erreur", errorMsg);
-  } finally {
-    setSubmitting(false);
-  }
-};
+
+    let result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.6,
+    });
+
+    if (!result.canceled) {
+      setImage(result.assets[0].uri);
+    }
+  };
+
+  const handleComplete = async () => {
+    if (!image) {
+      Alert.alert("Erreur", "Veuillez prendre une photo de preuve.");
+      return;
+    }
+    
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      const fileName = image.split('/').pop() || 'proof.jpg';
+
+      formData.append('proofImage', {
+        uri: Platform.OS === 'ios' ? image.replace('file://', '') : image,
+        type: 'image/jpeg',
+        name: fileName,
+      } as any);
+
+      formData.append('note', note);
+
+      const res = await api.put(`/tasks/complete/${task._id}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        transformRequest: (data) => data,
+      });
+
+      const scoreGagne = res.data.task.score;
+      Alert.alert("Félicitations ! 🎉", `Score : +${scoreGagne} points !`, [
+        { text: "Génial", onPress: () => onSuccess() }
+      ]);
+
+    } catch (e: any) {
+      console.error("Erreur validation:", e.response?.data || e.message);
+      Alert.alert("Erreur", e.response?.data?.error || "Impossible de valider.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
-    <ScrollView style={styles.detailContainer}>
+    <ScrollView style={styles.detailContainer} bounces={false}>
       <TouchableOpacity onPress={onBack} style={styles.backButton}>
         <Ionicons name="arrow-back" size={24} color="#333" />
         <Text style={styles.backText}>Retour au planning</Text>
@@ -194,28 +215,44 @@ function TaskDetailView({ task, currentUserId, onBack, onSuccess }: { task: Task
             <Text style={styles.ribbonText}>{STATUS_MAP[task.status]?.label}</Text>
         </View>
 
-        <Text style={styles.detailTitle}>{task.name}</Text>
-        <Text style={styles.detailSub}>Assigné à {task.assignedTo?.name}</Text>
-        <Text style={styles.detailDate}>Date limite : {moment(task.dueDate).format('LLLL')}</Text>
+        <View style={styles.paddingContent}>
+            <Text style={styles.detailTitle}>{task.name}</Text>
+            <Text style={styles.detailSub}>Assigné à {task.assignedTo?.name}</Text>
+            <Text style={styles.detailDate}>Date limite : {moment(task.dueDate).format('LLLL')}</Text>
+        </View>
 
         <View style={styles.divider} />
 
         <Text style={styles.sectionTitle}>Preuve de réalisation</Text>
         
-        {image ? (
-            <Image source={{ uri: image }} style={styles.proofImage} />
-        ) : (
-            <View style={styles.emptyPhotoBox}>
-                <Ionicons name="images-outline" size={40} color="#CCC" />
-                <Text style={{ color: '#AAA' }}>Aucune photo fournie</Text>
-            </View>
-        )}
+        {/* WRAPPER D'IMAGE AVEC TAILLE FIXE POUR CLOUDINARY */}
+        <View style={styles.imageWrapper}>
+            {image ? (
+                <>
+                    <Image 
+                        source={{ uri: image, cache: 'reload' }} 
+                        style={styles.proofImage} 
+                        resizeMode="cover"
+                        onLoadStart={() => setImageLoading(true)}
+                        onLoadEnd={() => setImageLoading(false)}
+                    />
+                    {imageLoading && (
+                        <ActivityIndicator style={styles.loaderOverImage} color="#205C3B" />
+                    )}
+                </>
+            ) : (
+                <View style={styles.emptyPhotoBox}>
+                    <Ionicons name="images-outline" size={40} color="#CCC" />
+                    <Text style={{ color: '#AAA' }}>Aucune photo fournie</Text>
+                </View>
+            )}
+        </View>
 
         {isOwner && task.status === 'pending' && (
             <View style={{ marginTop: 20, paddingHorizontal: 20 }}>
                 <TouchableOpacity 
                     style={styles.cameraBtn} 
-                    onPress={() => setImage('https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&q=80&w=500')}
+                    onPress={pickImage}
                 >
                     <Ionicons name="camera" size={24} color="#fff" />
                     <Text style={styles.cameraBtnText}>{image ? "Changer la photo" : "Prendre en photo"}</Text>
@@ -223,7 +260,7 @@ function TaskDetailView({ task, currentUserId, onBack, onSuccess }: { task: Task
 
                 <TextInput 
                     style={styles.input} 
-                    placeholder="Ajouter un commentaire..." 
+                    placeholder="Ajouter un commentaire (optionnel)..." 
                     value={note} 
                     onChangeText={setNote} 
                     multiline
@@ -239,10 +276,16 @@ function TaskDetailView({ task, currentUserId, onBack, onSuccess }: { task: Task
             </View>
         )}
 
-        {task.note && (
+        {!isOwner && task.status === 'pending' && (
+             <Text style={styles.notOwnerText}>Seul {task.assignedTo?.name} peut valider cette tâche.</Text>
+        )}
+
+        {task.status === 'done' && (
             <View style={styles.noteBox}>
-                <Text style={styles.noteTitle}>Note :</Text>
-                <Text style={styles.noteText}>{task.note}</Text>
+                <Text style={styles.noteTitle}>Note de réalisation :</Text>
+                <Text style={styles.noteText}>
+                    {task.note ? `"${task.note}"` : "Aucun commentaire laissé."}
+                </Text>
             </View>
         )}
       </View>
@@ -252,7 +295,7 @@ function TaskDetailView({ task, currentUserId, onBack, onSuccess }: { task: Task
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA', padding: 16 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, marginTop: 40 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, marginTop: Platform.OS === 'android' ? 40 : 10 },
   headerTitle: { fontSize: 28, fontWeight: '800', color: '#1A1A1A' },
   headerSub: { fontSize: 14, color: '#777' },
   weekPicker: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 4, elevation: 2 },
@@ -277,25 +320,34 @@ const styles = StyleSheet.create({
   userName: { fontSize: 12, color: '#7F8C8D', marginLeft: 4 },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   statusText: { fontSize: 10, fontWeight: 'bold' },
-  detailContainer: { flex: 1, backgroundColor: '#F8F9FA', padding: 20 },
-  backButton: { flexDirection: 'row', alignItems: 'center', marginTop: 40, marginBottom: 20 },
+  
+  // --- Détail ---
+  detailContainer: { flex: 1, backgroundColor: '#F8F9FA' },
+  backButton: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginTop: Platform.OS === 'android' ? 50 : 20, marginBottom: 20 },
   backText: { marginLeft: 10, fontWeight: '600', color: '#333' },
-  detailCard: { backgroundColor: '#fff', borderRadius: 24, overflow: 'hidden', paddingBottom: 30, elevation: 4 },
-  statusRibbon: { paddingVertical: 8, alignItems: 'center' },
-  ribbonText: { color: '#fff', fontWeight: 'bold', letterSpacing: 1 },
-  detailTitle: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginTop: 20 },
-  detailSub: { textAlign: 'center', color: '#666', marginTop: 5 },
-  detailDate: { textAlign: 'center', color: '#999', fontSize: 12, marginTop: 5 },
+  detailCard: { backgroundColor: '#fff', marginHorizontal: 15, borderRadius: 24, overflow: 'hidden', paddingBottom: 30, elevation: 4, shadowOpacity: 0.1, shadowRadius: 10 },
+  statusRibbon: { paddingVertical: 10, alignItems: 'center' },
+  ribbonText: { color: '#fff', fontWeight: 'bold', letterSpacing: 1, fontSize: 12 },
+  paddingContent: { paddingHorizontal: 20 },
+  detailTitle: { fontSize: 26, fontWeight: 'bold', textAlign: 'center', marginTop: 20, color: '#1A1A1A' },
+  detailSub: { textAlign: 'center', color: '#666', marginTop: 5, fontSize: 15 },
+  detailDate: { textAlign: 'center', color: '#999', fontSize: 13, marginTop: 8 },
   divider: { height: 1, backgroundColor: '#EEE', marginHorizontal: 20, marginVertical: 20 },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', marginHorizontal: 20, marginBottom: 10 },
-  proofImage: { width: '90%', height: 250, alignSelf: 'center', borderRadius: 15, backgroundColor: '#EEE' },
-  emptyPhotoBox: { width: '90%', height: 150, alignSelf: 'center', backgroundColor: '#F9F9F9', borderRadius: 15, justifyContent: 'center', alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: '#CCC' },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', marginHorizontal: 20, marginBottom: 15, color: '#333' },
+  
+  // IMAGE FIXES
+  imageWrapper: { width: '90%', height: 300, alignSelf: 'center', borderRadius: 20, overflow: 'hidden', backgroundColor: '#F0F0F0', justifyContent: 'center', alignItems: 'center' },
+  proofImage: { width: '100%', height: '100%' },
+  loaderOverImage: { position: 'absolute' },
+  
+  emptyPhotoBox: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: '#CCC', borderRadius: 20 },
   cameraBtn: { backgroundColor: '#3498DB', flexDirection: 'row', width: '90%', alignSelf: 'center', padding: 15, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
   cameraBtnText: { color: '#fff', fontWeight: 'bold', marginLeft: 10 },
-  input: { width: '90%', alignSelf: 'center', borderWidth: 1, borderColor: '#EEE', borderRadius: 12, padding: 15, marginTop: 15, height: 80, textAlignVertical: 'top' },
-  mainBtn: { backgroundColor: '#205C3B', width: '90%', alignSelf: 'center', padding: 18, borderRadius: 12, marginTop: 15, alignItems: 'center' },
-  mainBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  noteBox: { width: '90%', alignSelf: 'center', marginTop: 20, padding: 15, backgroundColor: '#F0F7F4', borderRadius: 12 },
-  noteTitle: { fontWeight: 'bold', color: '#205C3B', fontSize: 12 },
-  noteText: { color: '#444', marginTop: 5 }
+  input: { width: '90%', alignSelf: 'center', borderWidth: 1, borderColor: '#EEE', borderRadius: 12, padding: 15, marginTop: 15, height: 100, textAlignVertical: 'top', backgroundColor: '#FDFDFD' },
+  mainBtn: { backgroundColor: '#205C3B', width: '90%', alignSelf: 'center', padding: 18, borderRadius: 12, marginTop: 20, alignItems: 'center', elevation: 3 },
+  mainBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16, letterSpacing: 1 },
+  noteBox: { width: '90%', alignSelf: 'center', marginTop: 25, padding: 18, backgroundColor: '#F0F7F4', borderRadius: 15, borderLeftWidth: 4, borderLeftColor: '#205C3B' },
+  noteTitle: { fontWeight: 'bold', color: '#205C3B', fontSize: 13, marginBottom: 5 },
+  noteText: { color: '#444', fontSize: 15, fontStyle: 'italic' },
+  notOwnerText: { textAlign: 'center', color: '#E74C3C', marginTop: 20, fontStyle: 'italic', paddingHorizontal: 20 }
 });

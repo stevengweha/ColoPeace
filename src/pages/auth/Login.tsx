@@ -15,6 +15,9 @@ import api from '../../services/api';
 import { connectSocket } from '../../services/socket';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+// 🧩 IMPORT DU COMPOSANT CLERK
+import SocialAuth from '../../components/SocialAuth';
+
 const COLORS = {
   primary: '#205C3B',
   secondary: '#5cb85c',
@@ -24,12 +27,12 @@ const COLORS = {
   shadow: 'rgba(0,0,0,0.1)',
 };
 
-// On récupère "navigation" directement depuis les props fournies par le Stack.Navigator
 export default function Login({ onLogin, navigation }: { onLogin: (user: any) => void, navigation: any }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // --- LOGIN CLASSIQUE (Email/Password) ---
   const handleLogin = async () => {
     if (loading) return;
     if (!email || !password) {
@@ -38,33 +41,28 @@ export default function Login({ onLogin, navigation }: { onLogin: (user: any) =>
 
     setLoading(true);
     try {
-      // 1. Appel API
       const res = await api.post('/auth/login', { email: email.trim(), password });
       const user = res.data.user || res.data;
 
-      // 2. Stockage AsyncStorage
+      // Stockage local
       await AsyncStorage.setItem("@colopeace_user", JSON.stringify(user));
 
-      // 3. Mise à jour de l'état global (App.tsx va switcher automatiquement sur AppStack)
+      // Notification à App.tsx pour switcher de Stack
       if (typeof onLogin === 'function') {
         onLogin(user);
       }
 
-      // 4. Initialisation Socket
+      // Connexion Sockets
       try {
         connectSocket(user._id || user.id);
       } catch (e) {
         console.log("Socket connection error:", e);
       }
 
-      // NOTE: Pas besoin de router.push ici ! 
-      // Dans ton App.tsx, {user ? <AppStack /> : <AuthStack />} 
-      // redirige l'utilisateur dès que onLogin(user) est appelé.
-
     } catch (err: any) {
-      console.error("Login Error Detail:", err);
+      console.error("Login Error:", err);
       const errorMessage = err.response?.data?.message;
-      Alert.alert('Erreur', errorMessage || 'Identifiants incorrects ou serveur injoignable.');
+      Alert.alert('Erreur', errorMessage || 'Identifiants incorrects.');
     } finally {
       setLoading(false);
     }
@@ -81,6 +79,7 @@ export default function Login({ onLogin, navigation }: { onLogin: (user: any) =>
         <Text style={styles.title}>Bienvenue chez ColoPeace</Text>
         <Text style={styles.subtitle}>Connectez-vous pour voir vos tâches de la semaine.</Text>
 
+        {/* INPUT EMAIL */}
         <View style={styles.inputGroup}>
           <Ionicons name="mail-outline" size={20} color={COLORS.placeholder} style={styles.icon} />
           <TextInput 
@@ -94,6 +93,7 @@ export default function Login({ onLogin, navigation }: { onLogin: (user: any) =>
           />
         </View>
 
+        {/* INPUT PASSWORD */}
         <View style={styles.inputGroup}>
           <Ionicons name="lock-closed-outline" size={20} color={COLORS.placeholder} style={styles.icon} />
           <TextInput 
@@ -106,6 +106,7 @@ export default function Login({ onLogin, navigation }: { onLogin: (user: any) =>
           />
         </View>
 
+        {/* BOUTON LOGIN CLASSIQUE */}
         <TouchableOpacity 
           style={[styles.button, loading && styles.buttonDisabled]} 
           onPress={handleLogin} 
@@ -117,8 +118,11 @@ export default function Login({ onLogin, navigation }: { onLogin: (user: any) =>
             <Text style={styles.buttonText}>Se connecter</Text>
           )}
         </TouchableOpacity>
-        
-        {/* Utilisation de navigation.navigate (React Navigation natif) */}
+
+        {/* --- BOUTON GOOGLE (VIA CLERK) --- */}
+        <SocialAuth onLoginSuccess={onLogin} />
+
+        {/* LIEN VERS REGISTER */}
         <TouchableOpacity onPress={() => navigation.navigate('Register')}>
           <Text style={styles.link}>Pas encore de compte ? Créer un compte</Text>
         </TouchableOpacity>
@@ -158,9 +162,8 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     marginTop: 10,
-    marginBottom: 15,
   },
   buttonText: { color: '#ffffff', fontSize: 18, fontWeight: '700' },
   buttonDisabled: { backgroundColor: COLORS.secondary, opacity: 0.7 },
-  link: { color: COLORS.primary, fontSize: 14, fontWeight: '600', marginTop: 15, textAlign: 'center' },
+  link: { color: COLORS.primary, fontSize: 14, fontWeight: '600', marginTop: 25, textAlign: 'center' },
 });
