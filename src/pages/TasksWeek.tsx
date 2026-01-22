@@ -6,168 +6,82 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
-  Platform // Importé pour des styles potentiels
+  ScrollView,
+  Platform,
+  useWindowDimensions // 🎯 Important pour le responsive
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Agenda } from "react-native-calendars";
 import api from "../services/api";
-import { useNavigation, NavigationProp } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 
-
-type RootStackParamList = {
-  // Utilisez le nom de route que vous avez défini dans App.js
-  Home: undefined;
-  Conversations: undefined;
-  Chat: undefined; // Chat est le nom de la route, pas Messages
-  Users: undefined;
-  Caisse: undefined;
-  ListeAchats: undefined;
-};
-
-
-type TaskType = {
-  _id: string;
-  name: string;
-  dueDate?: string | Date;
-  status: "done" | "pending";
-  assignedTo?: { _id?: string; name?: string } | string | null;
-};
-
-
+// Type pour les stats venant du Backend
 type StatsType = {
-  tasks: number;
-  tasksDone: number;
-  tasksPending: number;
-  conversations: number;
-  users: number;
+  totalAssigned: number;
+  done: number;
+  late: number;
+  pending: number;
+  score: number;
+  conversations?: number; 
 };
 
-// Renommé en Dashboard si c'est la page d'accueil, sinon utilisez TasksWeek
 export default function TasksWeek({ user }: { user: any }) {
-  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-
+  const navigation = useNavigation<any>();
+  const { width } = useWindowDimensions(); // 🎯 Détecte la largeur dynamiquement
   const userId = user?._id || user?.id;
-  const [stats, setStats] = useState<StatsType>({
-    tasks: 0,
-    tasksDone: 0,
-    tasksPending: 0,
-    conversations: 0,
-    users: 0,
-  });
-  const [tasks, setTasks] = useState<TaskType[]>([]);
-  const [agendaItems, setAgendaItems] = useState<Record<string, TaskType[]>>({});
+
   const [loading, setLoading] = useState(true);
-  // J'ai conservé la logique de bascule écran dans le composant
-  const [screen, setScreen] = useState<"dashboard" | "tasksWeek">("dashboard");
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [stats, setStats] = useState<StatsType>({
+    totalAssigned: 0,
+    done: 0,
+    late: 0,
+    pending: 0,
+    score: 0,
+  });
+  const [convCount, setConvCount] = useState(0);
 
-  useEffect(() => {
-    let isMounted = true;
-    if (!userId) {
-      setLoading(false);
-      return () => { isMounted = false; };
-    }
+  const loadDashboardData = useCallback(async () => {
+    if (!userId) return;
+    setLoading(true);
+    try {
+      const [statsRes, convsRes] = await Promise.all([
+        api.get(`/tasks/user/${userId}/stats`),
+        api.get("/conversations"),
+      ]);
 
-    async function loadData() {
+      setStats(statsRes.data);
+      setConvCount(convsRes.data?.length || 0);
+    } catch (err: any) {
+      console.error("Erreur Dashboard:", err);
       try {
-        const [tasksRes, usersRes, conversationsRes] = await Promise.all([
-          api.get(`/tasks/user/${userId}`),
-          api.get("/users"),
-          api.get("/conversations"),
-        ]);
-
-        if (!isMounted) return;
-
-        const tasksData: TaskType[] = (tasksRes.data || []).map((t: any) => ({
-          ...t,
-          assignedTo: typeof t.assignedTo === "object" ? t.assignedTo : null,
-          dueDate: t.dueDate ? new Date(t.dueDate) : new Date()
-        }));
-
-        setTasks(tasksData);
-
+        const tasksRes = await api.get(`/tasks/user/${userId}`);
+        const tasks = tasksRes.data || [];
         setStats({
-          tasks: tasksData.length,
-          tasksDone: tasksData.filter(t => t.status === "done").length,
-          tasksPending: tasksData.filter(t => t.status === "pending").length,
-          users: (usersRes.data || []).length,
-          conversations: (conversationsRes.data || []).length,
+          totalAssigned: tasks.length,
+          done: tasks.filter((t: any) => t.status === "done").length,
+          pending: tasks.filter((t: any) => t.status === "pending").length,
+          late: 0,
+          score: 0
         });
-
-        if ((tasksData || []).length > 0) {
-          const firstDate = new Date(tasksData[0].dueDate || new Date()).toISOString().split("T")[0];
-          setSelectedDate(firstDate);
-        } else {
-          setSelectedDate(new Date().toISOString().split("T")[0]);
-        }
-      } catch (err: any) {
-        console.error("Erreur loadData:", err);
-        Alert.alert(
-          "Erreur serveur",
-          err.response?.data?.message || err.message || "Erreur lors du chargement des données."
-        );
-      } finally {
-        if (isMounted) setLoading(false);
+      } catch (e) {
+        Alert.alert("Erreur", "Impossible de charger les statistiques.");
       }
+    } finally {
+      setTimeout(() => setLoading(false), 300);
     }
-
-    loadData();
-    return () => { isMounted = false; };
   }, [userId]);
 
-  // Construire objet items pour Agenda
-  const buildAgendaItems = useCallback((tasksList: TaskType[]) => {
-    const map: Record<string, TaskType[]> = {};
-    let dates: Date[] = [];
-    if (tasksList.length === 0) {
-      dates = [new Date()];
-    } else {
-      dates = tasksList.map(t => new Date(t.dueDate || new Date()));
-    }
-    const min = new Date(Math.min(...dates.map(d => d.getTime())));
-    const max = new Date(Math.max(...dates.map(d => d.getTime())));
-    const start = new Date(min); start.setDate(start.getDate() - 7);
-    const end = new Date(max); end.setDate(end.getDate() + 14);
-
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const key = new Date(d).toISOString().split("T")[0];
-      map[key] = [];
-    }
-
-    tasksList.forEach(t => {
-      const key = new Date(t.dueDate || new Date()).toISOString().split("T")[0];
-      if (!map[key]) map[key] = [];
-      map[key].push(t);
-    });
-
-    return map;
-  }, []);
-
-  // recalculer agendaItems dès que tasks change
   useEffect(() => {
-    setAgendaItems(buildAgendaItems(tasks));
-  }, [tasks, buildAgendaItems]);
-
-  function stringToColor(str?: string) {
-    if (!str) return "#888";
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = str.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const c = (hash & 0x00ffffff).toString(16).toUpperCase();
-    return "#" + "00000".substring(0, 6 - c.length) + c;
-  }
+    loadDashboardData();
+  }, [loadDashboardData]);
 
   const tiles = useMemo(() => ([
-    { title: "Messages", icon: "chatbubble-ellipses-outline", value: stats.conversations, screen: "Conversations", color: "#1E88E5" },
-    { title: "Tâches à faire", icon: "time-outline", value: stats.tasksPending, screen: "tasksWeek", color: "#f92525ff" },
-    { title: "Réalisations", icon: "checkmark-done-circle-outline", value: stats.tasksDone, screen: "tasksWeek", color: "#2E7D32" },
-    { title: "Utilisateurs", icon: "people-outline", value: stats.users, screen: "Users", color: "#6A1B9A" },
-    { title: "Caisse commune", icon: "cash-outline", value: "30€", screen: "Caisse", color: "#d3c120ff" },
-    { title: "Liste achats", icon: "cart-outline", value: stats.tasks, screen: "ListeAchats", color: "#ffa702ff" }
-  ]), [stats]);
-
-  // ❌ SUPPRESSION DE PAGESHELL. L'affichage doit être nu.
+    { title: "Messages", icon: "chatbubble-ellipses-outline", value: convCount, route: "Conversations", color: "#1E88E5" },
+    { title: "Tâches à faire", icon: "time-outline", value: stats.pending, route: "Tasks", color: "#f92525ff" },
+    { title: "Réalisations", icon: "checkmark-done-circle-outline", value: stats.done, route: "Taskshistory", color: "#2E7D32" },
+    { title: "Colocs", icon: "people-outline", value: "Voir", route: "Users", color: "#6A1B9A" },
+    { title: "Caisse", icon: "cash-outline", value: "30€", route: "Caisse", color: "#d3c120ff" },
+    { title: "Liste achats", icon: "cart-outline", value: "!", route: "ListeAchats", color: "#ffa702ff" }
+  ]), [stats, convCount]);
 
   if (loading) return (
     <View style={styles.loading}>
@@ -175,98 +89,82 @@ export default function TasksWeek({ user }: { user: any }) {
     </View>
   );
 
-  // 1. Rendu de l'écran Agenda/Calendrier (si l'état interne le dicte)
-  if (screen === "tasksWeek") {
-    return (
-      // Retourne directement le contenu (pas de Header/BottomBar)
-      <View style={{ flex: 1 }}>
-        <TouchableOpacity onPress={() => setScreen("dashboard")} style={styles.backButton}>
-          <Ionicons name="arrow-back-outline" size={28} color="#205C3B" />
-          <Text style={{ fontSize: 16, marginLeft: 8 }}>Retour au Dashboard</Text>
-        </TouchableOpacity>
+  // 🎯 Calcul de la largeur des colonnes
+  // Si écran large (> 768px) -> 3 colonnes (31%)
+  // Si mobile -> 2 colonnes (48%)
+  const isLargeScreen = width > 768;
+  const itemWidth = isLargeScreen ? "31.3%" : "48%";
 
-        <Agenda
-          style={{ flex: 1 }}
-          items={agendaItems}
-          selected={selectedDate}
-          loadItemsForMonth={(month) => {
-            console.log("loadItemsForMonth", month);
-          }}
-          renderItem={(item: TaskType) => (
-            <View style={[styles.taskItem, { backgroundColor: item.assignedTo && typeof item.assignedTo === "object" ? stringToColor(item.assignedTo.name || "") : "#888" }]}>
-              <Text style={styles.taskText}>{item.name}</Text>
-              <Text style={styles.taskUser}>{typeof item.assignedTo === "object" ? item.assignedTo.name : "Non assigné"}</Text>
-            </View>
-          )}
-          // 🎯 CORRECTION : Ajouter <Text>
-          renderEmptyData={() => <Text style={{ textAlign: "center", marginTop: 20 }}>Pas de tâches</Text>}
-          rowHasChanged={(r1, r2) => r1._id !== r2._id}
-          renderDay={(day, item) => {
-            return <Text style={{ textAlign: "center", color: "#444" }}>{day ? day.day + "/" + (day.month) : null}</Text>;
-          }}
-          onDayPress={(day) => console.log("onDayPress", day)}
-        />
-      </View>
-    );
-  }
-
-  // 2. Rendu de l'écran Dashboard (par défaut)
   return (
-    // Retourne directement le contenu (pas de Header/BottomBar)
-    <View style={{ flex: 1, padding: 15 }}>
-      <Text style={styles.title}>Bonjour {user?.name || user?.firstname || "👋"} !</Text>
-      <Text style={styles.subtitle}>Voici votre résumé</Text>
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+      <View style={styles.headerSection}>
+        <Text style={styles.title}>Bonjour {user?.name || "Coloc"} !</Text>
+        <Text style={styles.subtitle}>Tu as {stats.pending} tâches en attente cette semaine.</Text>
+      </View>
 
       <View style={styles.grid}>
         {tiles.map((t, i) => (
           <TouchableOpacity
             key={i}
-            style={[styles.tile, { backgroundColor: t.color }]}
-            onPress={() => {
-              // 🎯 CORRECTION : Navigation via navigation.navigate ou setScreen
-              switch (t.title) {
-                case "Messages":
-                  navigation.navigate("Conversations"); // Utilisé Conversations comme route Stack
-                  break;
-                case "Tâches à faire":
-                  navigation.navigate("Tasks"); // Bascule l'affichage localement
-                  break;
-                case "Réalisations":
-                  navigation.navigate("Tasks"); // Bascule l'affichage localement
-                  break;
-                case "Utilisateurs":
-                  navigation.navigate("Users"); // Route Users
-                  break;
-                case "Caisse commune":
-                  navigation.navigate("Caisse");
-                  break;
-                case "Liste achats":
-                  navigation.navigate("ListeAchats");
-                  break;
-              }
-            }}
+            style={[
+                styles.tile, 
+                { backgroundColor: t.color, width: itemWidth } // Applique la largeur dynamique
+            ]}
+            onPress={() => navigation.navigate(t.route)}
           >
-            <Ionicons name={t.icon} size={36} color="#fff" />
+            <View style={styles.tileHeader}>
+               <Ionicons name={t.icon as any} size={30} color="#fff" />
+               <Text style={styles.counter}>{t.value}</Text>
+            </View>
             <Text style={styles.tileText}>{t.title}</Text>
-            <Text style={styles.counter}>{t.value}</Text>
           </TouchableOpacity>
-
         ))}
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  container: { 
+    flex: 1, 
+    backgroundColor: "#F8F9FA" 
+  },
+  scrollContent: { 
+    padding: 15, 
+    paddingBottom: 100,
+    maxWidth: 1000, // 🎯 Centre le contenu sur PC pour éviter qu'il soit trop étiré
+    alignSelf: 'center',
+    width: '100%'
+  },
   loading: { flex: 1, justifyContent: "center", alignItems: "center" },
-  title: { fontSize: 26, fontWeight: "bold", marginBottom: 10 },
-  subtitle: { fontSize: 16, color: "#666", marginBottom: 15 },
-  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
-  tile: { width: "47%", height: 140, borderRadius: 15, justifyContent: "center", alignItems: "center", marginBottom: 15, elevation: 3 },
-  tileText: { fontSize: 18, fontWeight: "bold", color: "#fff", marginTop: 8 },
-  counter: { fontSize: 28, fontWeight: "900", color: "#fff", marginTop: 4 },
-  taskItem: { padding: 12, borderRadius: 12, marginVertical: 4 },
-  taskText: { color: "#fff", fontWeight: "bold" },
-  taskUser: { color: "#fff", fontStyle: "italic", marginTop: 2 },
-  backButton: { flexDirection: "row", alignItems: "center", padding: 10 },
+  headerSection: { marginBottom: 25, marginTop: 10 },
+  title: { fontSize: 28, fontWeight: "bold", color: "#1A1A1A" },
+  subtitle: { fontSize: 16, color: "#666", marginTop: 5 },
+  grid: { 
+    flexDirection: "row", 
+    flexWrap: "wrap", // Autorise le passage à la ligne
+    justifyContent: "space-between" 
+  },
+  tile: { 
+    height: 130, 
+    borderRadius: 20, 
+    padding: 18, 
+    marginBottom: 15, 
+    justifyContent: 'space-between',
+    ...Platform.select({
+      web: {
+        cursor: 'pointer', // Curseur main sur PC
+      },
+      default: {
+        elevation: 4,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      }
+    })
+  },
+  tileHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  tileText: { fontSize: 15, fontWeight: "600", color: "#fff", opacity: 0.9 },
+  counter: { fontSize: 24, fontWeight: "bold", color: "#fff" }
 });

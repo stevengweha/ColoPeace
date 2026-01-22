@@ -1,126 +1,210 @@
-import React, { createContext, useState } from "react";
+import React, { createContext, useEffect, useState, createRef } from "react";
+import { View, Vibration, Platform } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// 🚀 Importation du Layout
-import RootLayout from './src/RootLayout';
+// 🔔 NOTIFICATIONS & SOCKET
+import FlashMessage, { showMessage } from "react-native-flash-message";
+import { getSocket } from "./src/services/socket"; 
 
-// Importations des pages
+import RootLayout from "./src/RootLayout";
 import Login from "./src/pages/auth/Login";
 import Register from "./src/pages/auth/Register";
 import UsersList from "./src/pages/UsersList";
-import TasksWeek from "./src/pages/TasksWeek"; // ✅ TasksWeek est désormais votre écran principal
+import TasksWeek from "./src/pages/TasksWeek";
 import Conversations from "./src/pages/Conversations";
 import Chat from "./src/pages/Chat";
-import Tasks from "./src/pages/Job/Tasks"; // ✅ Importation de Tasks pour la navigation
-// ❌ Retrait de l'importation de Home, qui n'existe pas.
+import Tasks from "./src/pages/Job/Tasks";
+import Taskshistory from "./src/pages/Job/Taskshistory";
+import Profile from "./src/pages/Profile";
+import urlBase64ToUint8Array from "./src/services/vapidUtils";
+import api from './src/services/api'; 
 
+// --- 🌐 ENREGISTREMENT DU SERVICE WORKER (PWA) ---
+if (Platform.OS === 'web' && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('✅ Service Worker enregistré (Portée:', reg.scope, ')'))
+      .catch(err => console.error('❌ Erreur SW:', err));
+  });
+}
+
+// 🎯 RÉFÉRENCE DE NAVIGATION GLOBALE
+const navigationRef = createRef<any>();
 const Stack = createNativeStackNavigator();
 
-// 🔹 Contexte utilisateur
-export const UserContext = createContext({
+export const UserContext = createContext<{
+  user: any;
+  setUser: (user: any) => void;
+}>({
   user: null,
-  setUser: (_: any) => { },
+  setUser: () => {},
 });
 
-// 🔹 Header simple global 
-function SimpleHeader() {
-  return {
-    title: "ColoPeace",
-    headerStyle: { backgroundColor: "#205C3B" },
-    headerTintColor: "#fff",
-    headerTitleStyle: { fontWeight: "bold" },
-  };
-}
+const SimpleHeader = {
+  title: "ColoPeace",
+  headerStyle: { backgroundColor: "#205C3B" },
+  headerTintColor: "#fff",
+  headerTitleStyle: { fontWeight: "bold" },
+};
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-  // 🔹 Auth Stack (login/register) - SANS Header ni Layout
+  // 1️⃣ Charger l'utilisateur au démarrage
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const storedUser = await AsyncStorage.getItem("@colopeace_user");
+        if (storedUser) {
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
+          console.log("👤 Utilisateur chargé :", parsedUser.name);
+        }
+      } catch (error) {
+        console.error("❌ Erreur AsyncStorage :", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadUser();
+  }, []);
+
+  // 🎯 FONCTION POUR AFFICHER LES NOTIFICATIONS IN-APP (Via Sockets)
+  const triggerNotification = (data: any) => {
+    console.log("📩 RÉCEPTION SOCKET :", data.type, "|", data.title);
+    
+    // Protection vibration (certains navigateurs bloquent sans clic préalable)
+    try {
+      Vibration.vibrate(150);
+    } catch (e) {
+      console.log("Vibration non supportée ou bloquée");
+    }
+
+    const cleanId = data.conversationId ? data.conversationId.toString() : null;
+
+    showMessage({
+      message: data.title,
+      description: data.body,
+      type: "success",
+      backgroundColor: data.type === "chat" ? "#2E86C1" : "#205C3B",
+      color: "#fff",
+      icon: data.type === "chat" ? "info" : "success",
+      duration: 5000,
+      floating: true,
+      style: { 
+        borderRadius: 25, 
+        marginHorizontal: 15,
+        marginTop: Platform.OS === 'ios' ? 10 : 30,
+        elevation: 10,
+      },
+      titleStyle: { fontWeight: '800', fontSize: 16 },
+      onPress: () => {
+        if (data.type === "chat") {
+          navigationRef.current?.navigate("Chat", { id: cleanId, title: "Discussion" });
+        } else if (data.type === "task" || data.type === "task_done") {
+          navigationRef.current?.navigate("Tasks");
+        }
+      }
+    });
+  };
+
+  // 2️⃣ Gestion des Sockets & Abonnement Push
+  useEffect(() => {
+    if (user) {
+      const userId = user._id || user.id;
+
+      // 📲 Activer le Push Système sur le Web
+      if (Platform.OS === 'web') {
+        subscribeUserToPush(userId);
+      }
+
+      const socket = getSocket();
+      const userChannel = `notification_${userId}`;
+
+      console.log("🔌 Connexion Sockets actives pour :", user.name);
+      socket.emit("userOnline", userId);
+
+      // Écoute des différents canaux
+      socket.on(userChannel, triggerNotification);
+      socket.on("notification_global", triggerNotification);
+
+      return () => {
+        socket.off(userChannel);
+        socket.off("notification_global");
+      };
+    }
+  }, [user]);
+
+  // 🔑 FONCTION D'ABONNEMENT WEB PUSH
+  const subscribeUserToPush = async (userId: string) => {
+    const publicKey = process.env.EXPO_PUBLIC_VAPID_PUBLIC_KEY;
+    if (Platform.OS !== 'web' || !publicKey || !('serviceWorker' in navigator)) return;
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      
+      // On récupère ou on crée l'abonnement
+      let subscription = await registration.pushManager.getSubscription();
+      
+      if (!subscription) {
+        console.log("📡 Création d'un nouvel abonnement Push...");
+        const convertedVapidKey = urlBase64ToUint8Array(publicKey);
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidKey
+        });
+      }
+
+      // On synchronise systématiquement avec le backend
+      await api.post('/users/subscribe', { userId, subscription });
+      console.log("✅ Abonnement Push synchronisé en base de données");
+
+    } catch (error) {
+      console.error("❌ Erreur lors de l'abonnement Push:", error);
+    }
+  };
+
+  if (loading) return null;
+
+  // --- STACKS DE NAVIGATION ---
   function AuthStack() {
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Login">
-          {(props) => <Login onLogin={setUser} {...props} />}
-        </Stack.Screen>
-
-        <Stack.Screen name="Register">
-          {(props) => <Register onRegister={setUser} {...props} />}
-        </Stack.Screen>
+        <Stack.Screen name="Login">{(props) => <Login onLogin={setUser} {...props} />}</Stack.Screen>
+        <Stack.Screen name="Register">{(props) => <Register onRegister={setUser} {...props} />}</Stack.Screen>
       </Stack.Navigator>
     );
   }
 
-  // 🔹 App Stack (après login) - Utilise RootLayout
   function AppStack() {
     return (
-      <Stack.Navigator
-        // Désactive le header par défaut
-        screenOptions={{ headerShown: false }}
-      >
-
-        {/* 1. Écran HOME (Point d'entrée) utilise maintenant TasksWeek */}
-        <Stack.Screen name="Home">
-          {(props) => (
-            <RootLayout>
-              {/* 🎯 Utilisation de TasksWeek comme composant d'accueil */}
-              <TasksWeek user={user} {...props} />
-            </RootLayout>
-          )}
-        </Stack.Screen>
-
-        {/* ❌ L'ancienne entrée "TasksWeek" a été supprimée car elle est maintenant "Home" */}
-        {/* Si vous avez besoin de naviguer vers "TasksWeek" avec un autre nom de route, 
-            vous devrez renommer l'écran ci-dessus (ex: name="TasksDashboard") et ajouter un nouvel écran "TasksWeek". */}
-
-
-        {/* 2. Écran Conversations */}
-        <Stack.Screen name="Conversations">
-          {(props) => (
-            <RootLayout>
-              <Conversations user={user} {...props} />
-            </RootLayout>
-          )}
-        </Stack.Screen>
-
-        {/* 3. Écran Chat - Utilise le header natif (sans BottomBar) */}
-        <Stack.Screen
-          name="Chat"
-          options={SimpleHeader}
-        >
-          {(props) => <Chat user={user} {...props} />}
-        </Stack.Screen>
-
-        {/* 4. Écran UsersList */}
-        <Stack.Screen name="Users">
-          {(props) => (
-            <RootLayout>
-              <UsersList {...props} />
-            </RootLayout>
-          )}
-        </Stack.Screen>
-        {/* Ecran task. */}
-      <Stack.Screen name="Tasks">
-        {(props) => (
-          <RootLayout>
-            <Tasks user={user} {...props} />
-          </RootLayout>
-        )}
-      </Stack.Screen>
-
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="Home">{(props) => <RootLayout><TasksWeek user={user} {...props} /></RootLayout>}</Stack.Screen>
+        <Stack.Screen name="Conversations">{(props) => <RootLayout><Conversations user={user} {...props} /></RootLayout>}</Stack.Screen>
+        <Stack.Screen name="Chat" options={SimpleHeader}>{(props) => <Chat user={user} {...props} />}</Stack.Screen>
+        <Stack.Screen name="Users">{(props) => <RootLayout><UsersList {...props} /></RootLayout>}</Stack.Screen>
+        <Stack.Screen name="Tasks">{(props) => <RootLayout><Tasks user={user} {...props} /></RootLayout>}</Stack.Screen>
+        <Stack.Screen name="Taskshistory">{(props) => <RootLayout><Taskshistory user={user} {...props} /></RootLayout>}</Stack.Screen>
+        <Stack.Screen name="Profile">{(props) => <RootLayout><Profile user={user} {...props} /></RootLayout>}</Stack.Screen>
       </Stack.Navigator>
-
-      
     );
-
-    
   }
 
   return (
     <UserContext.Provider value={{ user, setUser }}>
-      <NavigationContainer>
-        {user ? <AppStack /> : <AuthStack />}
-      </NavigationContainer>
+      <View style={{ flex: 1 }}>
+        <NavigationContainer ref={navigationRef}>
+          {user ? <AppStack /> : <AuthStack />}
+        </NavigationContainer>
+        
+        <FlashMessage 
+          position="top" 
+          statusBarHeight={Platform.OS === 'ios' ? 45 : 30}
+        />
+      </View>
     </UserContext.Provider>
   );
 }

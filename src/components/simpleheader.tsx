@@ -14,27 +14,32 @@ import {
 } from "react-native";
 import HomeRedirectButton from "./HomeRedirectButton";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { UserContext } from "../contexts/UserContext";
 import { useNavigation } from "@react-navigation/native";
+import { UserContext } from "../../App";
 
 export default function CustomHeader() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const { user, setUser } = useContext(UserContext);
-  const isUserConnected = !!user;
+  // 🎯 Correction : On vérifie si l'objet user existe vraiment
+  const isUserConnected = user !== null && user !== undefined;
 
   const [menuVisible, setMenuVisible] = useState(false);
   const toggleMenu = () => setMenuVisible(!menuVisible);
 
-  // ---------------------
-  // 🔐 Déconnexion ColoPeace
-  // ---------------------
   const performLogout = async () => {
-    await AsyncStorage.removeItem("user");
-    setUser(null);
-    navigation.reset({
-      index: 0,
-      routes: [{ name: "Login" as never }]
-    });
+    try {
+      // 🎯 Correction : Utilise la même clé que dans ton App.js
+      await AsyncStorage.removeItem("@colopeace_user");
+      setUser(null);
+      setMenuVisible(false);
+      
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Login" }],
+      });
+    } catch (e) {
+      console.error("Erreur déconnexion:", e);
+    }
   };
 
   const handleLogout = () => {
@@ -57,51 +62,30 @@ export default function CustomHeader() {
 
   const handleMenuItemPress = (item: string) => {
     setMenuVisible(false);
-
     switch (item) {
-      case "parametres":
-        navigation.navigate("Profile" as never);
-        break;
-
-      case "accessibilite":
-        navigation.navigate("Accessibility" as never);
-        break;
-
-      case "apropos":
-        navigation.navigate("About" as never);
-        break;
-
-      case "nouscontacter":
-        navigation.navigate("Contact" as never);
-        break;
-
-      case "deconnexion":
-        handleLogout();
-        break;
-
-      default:
-        console.log("Item inconnu :", item);
+      case "parametres": navigation.navigate("Profile"); break;
+      case "accessibilite": navigation.navigate("Accessibility"); break;
+      case "apropos": navigation.navigate("About"); break;
+      case "nouscontacter": navigation.navigate("Contact"); break;
+      case "deconnexion": handleLogout(); break;
     }
   };
 
+  // 📝 Construction de la liste du menu
   const menuItems = [
-    ...(isUserConnected
-      ? [{ key: "parametres", label: "Mon profil" }]
-      : []),
+    ...(isUserConnected ? [{ key: "parametres", label: "Mon profil" }] : []),
     { key: "accessibilite", label: "Accessibilité" },
     { key: "apropos", label: "À propos" },
     { key: "nouscontacter", label: "Nous contacter" },
-    ...(isUserConnected
-      ? [{ key: "deconnexion", label: "Déconnexion" }]
-      : [])
+    // 🎯 Le bouton Logout s'affiche ici si isUserConnected est vrai
+    ...(isUserConnected ? [{ key: "deconnexion", label: "Déconnexion" }] : [])
   ];
 
   return (
     <View style={styles.headerWrapper}>
       <View style={styles.header}>
         <HomeRedirectButton />
-
-       
+        
         <Image
           source={require("../../assets/logo.png")}
           style={styles.logo}
@@ -109,7 +93,13 @@ export default function CustomHeader() {
         />
 
         <TouchableOpacity onPress={toggleMenu} style={styles.iconButton}>
-          <Ionicons name="menu-outline" size={28} color="#205C3B" />
+          {/* 🎯 Petit plus : Affiche l'initiale de l'user ou l'icône menu */}
+          <View style={styles.menuTrigger}>
+            {isUserConnected && (
+               <Text style={styles.userNameText}>{user.name?.charAt(0)}</Text>
+            )}
+            <Ionicons name="menu-outline" size={28} color="#205C3B" />
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -119,10 +109,7 @@ export default function CustomHeader() {
         animationType="fade"
         onRequestClose={() => setMenuVisible(false)}
       >
-        <Pressable
-          style={styles.modalBackground}
-          onPress={() => setMenuVisible(false)}
-        >
+        <Pressable style={styles.modalBackground} onPress={() => setMenuVisible(false)}>
           <View style={styles.dropdownMenu}>
             {menuItems.map((item) => (
               <Pressable
@@ -130,10 +117,17 @@ export default function CustomHeader() {
                 onPress={() => handleMenuItemPress(item.key)}
                 style={({ pressed }) => [
                   styles.menuItem,
-                  pressed && styles.menuItemPressed
+                  pressed && styles.menuItemPressed,
+                  // Style spécial pour la déconnexion en rouge
+                  item.key === "deconnexion" && styles.logoutItem
                 ]}
               >
-                <Text style={styles.menuItemText}>{item.label}</Text>
+                <Text style={[
+                  styles.menuItemText,
+                  item.key === "deconnexion" && styles.logoutText
+                ]}>
+                  {item.label}
+                </Text>
               </Pressable>
             ))}
           </View>
@@ -143,61 +137,45 @@ export default function CustomHeader() {
   );
 }
 
-const { width } = Dimensions.get("window");
-
 const styles = StyleSheet.create({
-  headerWrapper: {
-    zIndex: 9999,
-    elevation: 10
-  },
+  headerWrapper: { zIndex: 9999, elevation: 10 },
   header: {
-    height: 60,
+    height: 65,
     backgroundColor: "#fff",
     borderBottomWidth: 1,
-    borderBottomColor: "#ccc",
+    borderBottomColor: "#eee",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16
   },
-  logo: {
-    height: 50,
-    width: 50,
-    borderRadius: 25,
-    borderWidth: 1,
-    borderColor: "#205C3B"
-  },
-  iconButton: {
-    padding: 6
-  },
+  logo: { height: 45, width: 45, borderRadius: 22.5 },
+  iconButton: { padding: 6 },
+  menuTrigger: { flexDirection: 'row', alignItems: 'center' },
+  userNameText: { marginRight: 8, fontWeight: 'bold', color: '#205C3B', fontSize: 16 },
   modalBackground: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.3)",
+    backgroundColor: "rgba(0,0,0,0.2)",
     justifyContent: "flex-start",
     alignItems: "flex-end",
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'ios' ? 70 : 60,
     paddingRight: 16
   },
   dropdownMenu: {
     backgroundColor: "#fff",
-    borderRadius: 10,
-    width: 200,
-    paddingVertical: 10,
+    borderRadius: 15,
+    width: 220,
+    paddingVertical: 8,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 15,
+    elevation: 10
   },
-  menuItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 16
-  },
-  menuItemPressed: {
-    backgroundColor: "#e8f5e9"
-  },
-  menuItemText: {
-    fontSize: 16,
-    color: "#205C3B"
-  }
+  menuItem: { paddingVertical: 14, paddingHorizontal: 20 },
+  menuItemPressed: { backgroundColor: "#f0f0f0" },
+  menuItemText: { fontSize: 16, color: "#333", fontWeight: '500' },
+  // Style rouge pour la déconnexion
+  logoutItem: { borderTopWidth: 1, borderTopColor: '#eee', marginTop: 5 },
+  logoutText: { color: "#E74C3C", fontWeight: 'bold' }
 });

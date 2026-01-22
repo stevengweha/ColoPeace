@@ -1,400 +1,301 @@
-// tasks.tsx (Adapté à ColoPeace)
-
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, TextInput, StyleSheet, FlatList, ActivityIndicator, Alert } from "react-native";
+import { 
+  View, Text, TouchableOpacity, TextInput, StyleSheet, 
+  ActivityIndicator, Alert, ScrollView, Image, SafeAreaView, Platform 
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import moment from "moment";
+import 'moment/locale/fr';
 import api from "../../services/api";
 
-// ----------------------------
-// TYPES ET CONSTANTES
-// ----------------------------
+moment.locale('fr');
+
+// --- Types ---
 type User = { _id: string; name: string; avatarUrl?: string };
-
 type Task = {
-  _id: string;
-  name: "Sol" | "Cuisine" | "Douche" | "Toilettes";
-  assignedTo: User;
-  weekNumber: number;
-  year: number;
-  status: "pending" | "done" | "late" | "missed";
-  dueDate: string; // Date limite imposée
-  doneAt?: string; // Date de complétion réelle
-  proofImage?: string; // URL Cloudinary
-  note?: string;
+  _id: string; name: string; assignedTo: User;
+  weekNumber: number; year: number; status: "pending" | "done" | "late" | "missed";
+  dueDate: string; doneAt?: string; proofImage?: string; note?: string;
 };
 
-const STATUS_COLORS = {
-  pending: { icon: "timer-outline", color: "#FF9800", text: "En cours" },
-  done: { icon: "checkmark-circle-outline", color: "#4CAF50", text: "Terminé à temps" },
-  late: { icon: "warning-outline", color: "#FF5722", text: "Terminé en retard" },
-  missed: { icon: "close-circle-outline", color: "#F44336", text: "Manquée" },
+const STATUS_MAP: any = {
+  pending: { label: "À FAIRE", color: "#F39C12", icon: "time" },
+  done: { label: "TERMINÉ", color: "#27AE60", icon: "checkmark-circle" },
+  late: { label: "RETARD", color: "#E67E22", icon: "alert-circle" },
+  missed: { label: "MANQUÉ", color: "#E74C3C", icon: "close-circle" },
 };
 
-// ----------------------------
-// COMPOSANT PRINCIPAL : TaskRoot
-// ----------------------------
 export default function TaskRoot({ user }: { user: any }) {
-  
-  // ✅ CORRECTION: Ajout de 'complete_modal' comme état possible de l'écran
-  const [screen, setScreen] = useState<"dashboard" | "report" | "complete_modal">("dashboard");
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [currentWeek, setCurrentWeek] = useState(moment().isoWeek());
+  const [currentYear, setCurrentYear] = useState(moment().isoWeekYear());
+  const [view, setView] = useState<"calendar" | "detail">("calendar");
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
-  const userId = user?._id || user?.id;
+  const userId = user?._id || user?.id;
 
-  useEffect(() => {
-    if (userId) {
-      loadTasks(userId);
-    }
-  }, [userId]);
+  useEffect(() => { loadTasks(); }, [currentWeek, currentYear]);
 
-  async function loadTasks(id: string) {
-    try {
-      setLoading(true);
-      const res = await api.get(`/tasks/user/${id}`); 
-      setTasks(res.data || []);
-    } catch (err) {
-      Alert.alert("Erreur", "Impossible de charger les tâches.");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const loadTasks = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get(`/tasks/week/${currentWeek}/${currentYear}`);
+      setTasks(res.data || []);
+    } catch (err) {
+      console.error("Erreur chargement:", err);
+    } finally { setLoading(false); }
+  };
 
-  // ----------------------------
-  // RENDER
-  // ----------------------------
-  if (!userId) return <ActivityIndicator size="large" color="#205C3B" />;
+  const changeWeek = (direction: number) => {
+    let newDate = moment().isoWeekYear(currentYear).isoWeek(currentWeek).add(direction, 'weeks');
+    setCurrentWeek(newDate.isoWeek());
+    setCurrentYear(newDate.isoWeekYear());
+  };
 
-  // 1. Affichage du DASHBOARD
-  if (screen === "dashboard") {
-    return (
-      <TaskDashboard 
-        tasks={tasks} 
-        loading={loading} 
-        onRefresh={() => loadTasks(userId)} 
-        
-        onComplete={(task) => {
-          setSelectedTask(task);
-          setScreen("complete_modal");
-        }} 
-        
-        onOpenReport={() => setScreen("report")}
-        currentUserId={userId}
-      />
-    );
-  }
-  
-  // 2. Affichage du RAPPORT
-  if (screen === "report") {
-    return <EquityReport onBack={() => setScreen("dashboard")} />;
-  }
+  if (view === "detail" && selectedTask) {
+    return (
+      <TaskDetailView 
+        task={selectedTask} 
+        currentUserId={userId}
+        onSuccess={() => {
+            setView("calendar");
+            loadTasks(); 
+        }}
+        onBack={() => setView("calendar")} 
+      />
+    );
+  }
 
-  // 3. Affichage de la MODALE DE COMPLÉTION
-  if (screen === "complete_modal" && selectedTask) {
-    return (
-      <TaskCompleteModal 
-        task={selectedTask}
-        onCompleted={() => { 
-          setSelectedTask(null); 
-          loadTasks(userId); // Rafraîchir
-          setScreen("dashboard"); // Revenir au dashboard
-        }}
-        onCancel={() => {
-          setSelectedTask(null);
-          setScreen("dashboard"); // Revenir au dashboard
-        }}
-      />
-    );
-  }
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerTitle}>Planning</Text>
+          <Text style={styles.headerSub}>Semaine {currentWeek}, {currentYear}</Text>
+        </View>
+        <View style={styles.weekPicker}>
+          <TouchableOpacity onPress={() => changeWeek(-1)} style={styles.weekBtn}>
+            <Ionicons name="chevron-back" size={24} color="#205C3B" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => { setCurrentWeek(moment().isoWeek()); setCurrentYear(moment().isoWeekYear()); }} style={styles.todayBtn}>
+            <Text style={styles.todayBtnText}>Aujourd'hui</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => changeWeek(1)} style={styles.weekBtn}>
+            <Ionicons name="chevron-forward" size={24} color="#205C3B" />
+          </TouchableOpacity>
+        </View>
+      </View>
 
-  return null;
+      {loading ? (
+        <ActivityIndicator size="large" color="#205C3B" style={{ marginTop: 50 }} />
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+          {["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"].map((day, idx) => {
+            const dayMoment = moment().year(currentYear).isoWeek(currentWeek).isoWeekday(idx + 1);
+            const dayTasks = tasks.filter(t => moment(t.dueDate).isSame(dayMoment, 'day'));
+
+            return (
+              <View key={day} style={styles.daySection}>
+                <View style={styles.dayIndicator}>
+                    <Text style={styles.dayLabel}>{day}</Text>
+                    <Text style={styles.dateLabel}>{dayMoment.format('DD MMM')}</Text>
+                </View>
+                
+                <View style={styles.tasksContainer}>
+                    {dayTasks.length === 0 ? (
+                        <Text style={styles.noTaskText}>Aucune tâche</Text>
+                    ) : (
+                        dayTasks.map(task => (
+                            <TouchableOpacity 
+                                key={task._id} 
+                                style={[styles.taskCard, task.assignedTo?._id === userId && styles.myTaskCard]}
+                                onPress={() => { setSelectedTask(task); setView("detail"); }}
+                            >
+                                <View style={styles.taskInfo}>
+                                    <Text style={styles.taskName}>{task.name}</Text>
+                                    <View style={styles.userInfo}>
+                                        <Ionicons name="person-outline" size={12} color="#666" />
+                                        <Text style={styles.userName}>{task.assignedTo?.name}</Text>
+                                    </View>
+                                </View>
+                                <View style={[styles.statusBadge, { backgroundColor: STATUS_MAP[task.status]?.color + '20' }]}>
+                                    <Text style={[styles.statusText, { color: STATUS_MAP[task.status]?.color }]}>
+                                        {STATUS_MAP[task.status]?.label}
+                                    </Text>
+                                </View>
+                            </TouchableOpacity>
+                        ))
+                    )}
+                </View>
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
+    </SafeAreaView>
+  );
 }
 
-// ----------------------------
-// PAGE DASHBOARD (Liste)
-// ----------------------------
-function TaskDashboard({ tasks, loading, onRefresh, onComplete, onOpenReport, currentUserId }: { tasks: Task[], loading: boolean, onRefresh: () => void, onComplete: (task: Task) => void, onOpenReport: () => void, currentUserId: string }) {
-  
-  const currentWeek = moment().isoWeek();
-  const currentYear = moment().isoWeekYear();
+function TaskDetailView({ task, currentUserId, onBack, onSuccess }: { task: Task, currentUserId: string, onBack: () => void, onSuccess: () => void }) {
+  const [note, setNote] = useState(task.note || "");
+  const [image, setImage] = useState<string | null>(task.proofImage || null);
+  const [submitting, setSubmitting] = useState(false);
+  const isOwner = task.assignedTo?._id === currentUserId;
 
-  const currentTasks = tasks.filter(t => t.weekNumber === currentWeek && t.year === currentYear);
-  const myTasks = currentTasks.filter(t => t.assignedTo._id === currentUserId);
+  const handleComplete = async () => {
+  if (!image) {
+    const errorMsg = "Veuillez prendre une photo de preuve.";
+    Platform.OS === 'web' ? window.alert(errorMsg) : Alert.alert("Erreur", errorMsg);
+    return;
+  }
+  
+  setSubmitting(true);
+  try {
+    // 1. Envoi au backend (note et image)
+    const res = await api.put(`/tasks/complete/${task._id}`, { proofImage: image, note });
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>🏡 Tâches de la Semaine {currentWeek}</Text>
-        <TouchableOpacity onPress={onOpenReport} style={styles.reportButton}>
-          <Ionicons name="stats-chart-outline" size={24} color="#fff" />
-        </TouchableOpacity>
-      </View>
+    // 2. Récupération des données fraîches du serveur
+    // Le backend renvoie { message, task: { score, note, ... } }
+    const scoreGagne = res.data.task.score;
+    const noteValidee = res.data.task.note || "Aucune";
 
-      <View style={styles.infoBox}>
-        <Text style={styles.infoText}>
-          J'ai **{myTasks.filter(t => t.status === 'pending').length}** tâche(s) à faire.
-        </Text>
-      </View>
+    // 3. Préparation du message de succès
+    const succesMessage = `Score : +${scoreGagne} points !\nNote : ${noteValidee}`;
 
-      {loading && <ActivityIndicator size="large" color="#205C3B" style={{ marginTop: 20 }} />}
+    if (Platform.OS === 'web') {
+      window.alert(`Félicitations ! 🎉\n${succesMessage}`);
+      onSuccess();
+    } else {
+      Alert.alert(
+        "Félicitations ! 🎉",
+        succesMessage,
+        [{ text: "OK", onPress: () => onSuccess() }]
+      );
+    }
+  } catch (e: any) {
+    console.error("Erreur PUT:", e);
+    const errorMsg = e.response?.data?.error || "Impossible de valider.";
+    Platform.OS === 'web' ? window.alert(errorMsg) : Alert.alert("Erreur", errorMsg);
+  } finally {
+    setSubmitting(false);
+  }
+};
 
-      {!loading && (
-        <FlatList
-          data={currentTasks}
-          keyExtractor={(item) => item._id}
-          onRefresh={onRefresh}
-          refreshing={loading}
-          renderItem={({ item }) => {
-            const isMyTask = item.assignedTo._id === currentUserId;
-            const statusInfo = STATUS_COLORS[item.status] || STATUS_COLORS.pending;
-            
-            return (
-              <View style={styles.taskItem}>
-                <View style={styles.taskContent}>
-                  <Text style={styles.taskName}>{item.name}</Text>
-                  <Text style={{ color: statusInfo.color, fontWeight: 'bold', fontSize: 12 }}>
-                    <Ionicons name={statusInfo.icon as any} size={14} /> {statusInfo.text.toUpperCase()}
-                  </Text>
-                  <Text style={styles.assignedTo}>Assigné à : {item.assignedTo.name}</Text>
-                  
-                  {/* 🎯 Affichage du Délais */}
-                  <Text style={item.status === 'pending' && moment().isAfter(item.dueDate) ? styles.overdueText : styles.dueDateText}>
-                    Limite : {moment(item.dueDate).format('ddd DD/MM à HH:mm')}
-                  </Text>
+  return (
+    <ScrollView style={styles.detailContainer}>
+      <TouchableOpacity onPress={onBack} style={styles.backButton}>
+        <Ionicons name="arrow-back" size={24} color="#333" />
+        <Text style={styles.backText}>Retour au planning</Text>
+      </TouchableOpacity>
 
-                  {item.proofImage && (
-                    <Text style={styles.proofText}>
-                      Preuve fournie {moment(item.doneAt).fromNow()}.
-                    </Text>
-                  )}
-                </View>
+      <View style={styles.detailCard}>
+        <View style={[styles.statusRibbon, { backgroundColor: STATUS_MAP[task.status]?.color }]}>
+            <Text style={styles.ribbonText}>{STATUS_MAP[task.status]?.label}</Text>
+        </View>
 
-                {/* 🎯 Bouton de Complétion (si c'est ma tâche et en attente) */}
-                {isMyTask && item.status === 'pending' && (
-                  <TouchableOpacity 
-                    style={styles.completeButton} 
-                    onPress={() => onComplete(item)}
-                  >
-                    <Text style={styles.completeButtonText}>Terminer</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-          );
-          }}
-        />
-      )}
-    </View>
-  );
+        <Text style={styles.detailTitle}>{task.name}</Text>
+        <Text style={styles.detailSub}>Assigné à {task.assignedTo?.name}</Text>
+        <Text style={styles.detailDate}>Date limite : {moment(task.dueDate).format('LLLL')}</Text>
+
+        <View style={styles.divider} />
+
+        <Text style={styles.sectionTitle}>Preuve de réalisation</Text>
+        
+        {image ? (
+            <Image source={{ uri: image }} style={styles.proofImage} />
+        ) : (
+            <View style={styles.emptyPhotoBox}>
+                <Ionicons name="images-outline" size={40} color="#CCC" />
+                <Text style={{ color: '#AAA' }}>Aucune photo fournie</Text>
+            </View>
+        )}
+
+        {isOwner && task.status === 'pending' && (
+            <View style={{ marginTop: 20, paddingHorizontal: 20 }}>
+                <TouchableOpacity 
+                    style={styles.cameraBtn} 
+                    onPress={() => setImage('https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&q=80&w=500')}
+                >
+                    <Ionicons name="camera" size={24} color="#fff" />
+                    <Text style={styles.cameraBtnText}>{image ? "Changer la photo" : "Prendre en photo"}</Text>
+                </TouchableOpacity>
+
+                <TextInput 
+                    style={styles.input} 
+                    placeholder="Ajouter un commentaire..." 
+                    value={note} 
+                    onChangeText={setNote} 
+                    multiline
+                />
+
+                <TouchableOpacity 
+                    style={[styles.mainBtn, submitting && { opacity: 0.7 }]} 
+                    onPress={handleComplete}
+                    disabled={submitting}
+                >
+                    {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.mainBtnText}>VALIDER LA TÂCHE</Text>}
+                </TouchableOpacity>
+            </View>
+        )}
+
+        {task.note && (
+            <View style={styles.noteBox}>
+                <Text style={styles.noteTitle}>Note :</Text>
+                <Text style={styles.noteText}>{task.note}</Text>
+            </View>
+        )}
+      </View>
+    </ScrollView>
+  );
 }
 
-// ----------------------------
-// MODALE DE COMPLÉTION (Soumission de Preuve)
-// ----------------------------
-function TaskCompleteModal({ task, onCompleted, onCancel }: { task: Task, onCompleted: () => void, onCancel: () => void }) {
-  const [proofImageUri, setProofImageUri] = useState<string | null>(null);
-  const [note, setNote] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleImagePick = () => {
-    Alert.alert("Sélection Photo", "Simuler l'ouverture de la galerie/caméra.");
-    setProofImageUri('local/path/to/image.jpg'); 
-  };
-  
-  async function uploadImage(uri: string): Promise<string> {
-    return new Promise(resolve => setTimeout(() => resolve(`https://cloudinary.com/proof/${task._id}-${Date.now()}.jpg`), 1500));
-  }
-
-
-  async function saveCompletion() {
-    if (!proofImageUri) return Alert.alert("Erreur", "La preuve (photo) est obligatoire.");
-
-    setIsSubmitting(true);
-    
-    try {
-      const finalImageUrl = await uploadImage(proofImageUri); 
-
-      await api.put(`/tasks/complete/${task._id}`, {
-        proofImage: finalImageUrl,
-        note: note,
-      });
-
-      onCompleted();
-    } catch (err) {
-      Alert.alert("Erreur", "Impossible de soumettre la tâche.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  return (
-    <View style={[styles.container, styles.modalOverlay]}>
-      <View style={styles.modalContent}>
-        <Text style={styles.title}>✅ Confirmer {task.name}</Text>
-        <Text style={styles.modalText}>
-          La soumission de **preuve (photo)** est obligatoire. L'heure de complétion sera vérifiée par rapport à la limite.
-        </Text>
-
-        <TouchableOpacity onPress={handleImagePick} style={styles.uploadButton}>
-          <Ionicons name="camera-outline" size={24} color="#fff" />
-          <Text style={styles.btnText}>{proofImageUri ? "Preuve SÉLECTIONNÉE" : "Ajouter une Preuve Photo"}</Text>
-        </TouchableOpacity>
-
-        <TextInput 
-          style={[styles.input, { height: 80 }]} 
-          placeholder="Note (Optionnel)" 
-          value={note} 
-          onChangeText={setNote} 
-          multiline 
-        />
-
-        <View style={styles.modalActions}>
-          <TouchableOpacity onPress={onCancel} style={[styles.button, styles.cancelButton]} disabled={isSubmitting}>
-            <Text style={styles.cancelButtonText}>Annuler</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={saveCompletion} style={[styles.button, styles.saveButton]} disabled={isSubmitting || !proofImageUri}>
-            {isSubmitting ? 
-              <ActivityIndicator color="#fff" /> : 
-              <Text style={styles.btnText}>Confirmer la Complétion</Text>}
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// ----------------------------
-// PAGE RAPPORT D'ÉQUITÉ
-// ----------------------------
-function EquityReport({ onBack }: { onBack: () => void }) {
-  const [report, setReport] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadReport();
-  }, []);
-
-  async function loadReport() {
-    try {
-      setLoading(true);
-      const res = await api.get("/tasks/report/equity");
-      setReport(res.data);
-    } catch (err) {
-      Alert.alert("Erreur", "Impossible de charger le rapport d'équité.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (loading) return <ActivityIndicator size="large" color="#205C3B" style={styles.container} />;
-
-  return (
-    <View style={styles.container}>
-      <TouchableOpacity onPress={onBack} style={styles.backButton}>
-        <Ionicons name="arrow-back-outline" size={24} />
-        <Text style={{ marginLeft: 5 }}>Retour</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.title}>⚖️ Rapport d'Équité Global</Text>
-
-      <FlatList
-        data={report}
-        keyExtractor={(item) => item.name}
-        renderItem={({ item }) => (
-          <View style={styles.reportItem}>
-            <Text style={styles.reportName}>{item.name}</Text>
-            <Text>Assigné: <Text style={styles.reportValue}>{item.totalAssigned}</Text></Text>
-            <Text>Terminé à temps: <Text style={{ color: '#4CAF50' }}>{item.doneOnTime}</Text></Text>
-            <Text>En retard: <Text style={{ color: '#FF5722' }}>{item.late}</Text></Text>
-            <Text>Manquée: <Text style={{ color: '#F44336' }}>{item.missed}</Text></Text>
-            <Text style={styles.reportRate}>Taux de Succès: {(item.successRate * 100).toFixed(1)}%</Text>
-          </View>
-        )}
-      />
-    </View>
-  );
-}
-
-
-// ----------------------------
-// STYLES
-// ----------------------------
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: '#f9f9f9' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  title: { fontSize: 24, fontWeight: "bold" },
-  backButton: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  reportButton: { backgroundColor: '#205C3B', padding: 8, borderRadius: 50 },
-  
-  infoBox: { backgroundColor: '#E1F5FE', padding: 12, borderRadius: 8, marginBottom: 15 },
-  infoText: { fontSize: 16, color: '#01579B' },
-
-  taskItem: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    padding: 15, 
-    borderRadius: 10, 
-    backgroundColor: "#fff", 
-    marginVertical: 6, 
-    borderWidth: 1, 
-    borderColor: '#ddd' 
-  },
-  taskContent: { flex: 1 },
-  taskName: { fontSize: 18, fontWeight: "bold" },
-  assignedTo: { fontSize: 14, color: '#666', marginTop: 2 },
-  dueDateText: { fontSize: 12, color: '#00B8D4', marginTop: 4 },
-  overdueText: { fontSize: 12, color: '#D50000', marginTop: 4, fontWeight: 'bold' },
-  proofText: { fontSize: 12, color: '#333', fontStyle: 'italic', marginTop: 4 },
-  
-  completeButton: { 
-    backgroundColor: '#205C3B', 
-    paddingVertical: 8, 
-    paddingHorizontal: 12, 
-    borderRadius: 8, 
-    marginLeft: 10 
-  },
-  completeButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
-
-  // Styles Modale
-  modalOverlay: { 
-    position: 'absolute', // Permet à la modale de flotter par-dessus
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    backgroundColor: 'rgba(0,0,0,0.5)', 
-    padding: 0 
-  },
-  modalContent: { 
-    width: '90%', 
-    backgroundColor: 'white', 
-    padding: 20, 
-    borderRadius: 10 
-  },
-  modalText: { marginBottom: 15, color: '#444' },
-  uploadButton: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    backgroundColor: "#0288D1", 
-    padding: 12, 
-    borderRadius: 8, 
-    marginBottom: 15 
-  },
-  input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, marginBottom: 15 },
-  modalActions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  button: { padding: 10, borderRadius: 8, flex: 1, marginHorizontal: 5, alignItems: 'center' },
-  saveButton: { backgroundColor: '#205C3B' },
-  cancelButton: { backgroundColor: '#ccc' },
-  btnText: { color: '#fff', fontSize: 16, marginLeft: 5 },
-  cancelButtonText: { color: '#333', fontSize: 16 },
-
-  // Styles Rapport
-  reportItem: { padding: 15, borderRadius: 10, backgroundColor: "#fff", marginVertical: 6, borderWidth: 1, borderColor: '#eee' },
-  reportName: { fontSize: 18, fontWeight: 'bold', marginBottom: 5 },
-  reportValue: { fontWeight: 'bold' },
-  reportRate: { fontSize: 16, fontWeight: 'bold', color: '#1A237E', marginTop: 5 },
+  container: { flex: 1, backgroundColor: '#F8F9FA', padding: 16 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, marginTop: 40 },
+  headerTitle: { fontSize: 28, fontWeight: '800', color: '#1A1A1A' },
+  headerSub: { fontSize: 14, color: '#777' },
+  weekPicker: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 4, elevation: 2 },
+  weekBtn: { padding: 8 },
+  todayBtn: { paddingHorizontal: 12, borderLeftWidth: 1, borderRightWidth: 1, borderColor: '#EEE' },
+  todayBtnText: { fontSize: 12, fontWeight: 'bold', color: '#205C3B' },
+  daySection: { flexDirection: 'row', marginBottom: 20 },
+  dayIndicator: { width: 60, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 10 },
+  dayLabel: { fontWeight: 'bold', color: '#333', fontSize: 14 },
+  dateLabel: { color: '#AAA', fontSize: 12 },
+  tasksContainer: { flex: 1, paddingLeft: 10 },
+  noTaskText: { color: '#CCC', fontStyle: 'italic', marginTop: 10 },
+  taskCard: { 
+    backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 10, 
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2
+  },
+  myTaskCard: { borderLeftWidth: 5, borderLeftColor: '#205C3B' },
+  taskInfo: { flex: 1 },
+  taskName: { fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 },
+  userInfo: { flexDirection: 'row', alignItems: 'center' },
+  userName: { fontSize: 12, color: '#7F8C8D', marginLeft: 4 },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  statusText: { fontSize: 10, fontWeight: 'bold' },
+  detailContainer: { flex: 1, backgroundColor: '#F8F9FA', padding: 20 },
+  backButton: { flexDirection: 'row', alignItems: 'center', marginTop: 40, marginBottom: 20 },
+  backText: { marginLeft: 10, fontWeight: '600', color: '#333' },
+  detailCard: { backgroundColor: '#fff', borderRadius: 24, overflow: 'hidden', paddingBottom: 30, elevation: 4 },
+  statusRibbon: { paddingVertical: 8, alignItems: 'center' },
+  ribbonText: { color: '#fff', fontWeight: 'bold', letterSpacing: 1 },
+  detailTitle: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginTop: 20 },
+  detailSub: { textAlign: 'center', color: '#666', marginTop: 5 },
+  detailDate: { textAlign: 'center', color: '#999', fontSize: 12, marginTop: 5 },
+  divider: { height: 1, backgroundColor: '#EEE', marginHorizontal: 20, marginVertical: 20 },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', marginHorizontal: 20, marginBottom: 10 },
+  proofImage: { width: '90%', height: 250, alignSelf: 'center', borderRadius: 15, backgroundColor: '#EEE' },
+  emptyPhotoBox: { width: '90%', height: 150, alignSelf: 'center', backgroundColor: '#F9F9F9', borderRadius: 15, justifyContent: 'center', alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: '#CCC' },
+  cameraBtn: { backgroundColor: '#3498DB', flexDirection: 'row', width: '90%', alignSelf: 'center', padding: 15, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
+  cameraBtnText: { color: '#fff', fontWeight: 'bold', marginLeft: 10 },
+  input: { width: '90%', alignSelf: 'center', borderWidth: 1, borderColor: '#EEE', borderRadius: 12, padding: 15, marginTop: 15, height: 80, textAlignVertical: 'top' },
+  mainBtn: { backgroundColor: '#205C3B', width: '90%', alignSelf: 'center', padding: 18, borderRadius: 12, marginTop: 15, alignItems: 'center' },
+  mainBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  noteBox: { width: '90%', alignSelf: 'center', marginTop: 20, padding: 15, backgroundColor: '#F0F7F4', borderRadius: 12 },
+  noteTitle: { fontWeight: 'bold', color: '#205C3B', fontSize: 12 },
+  noteText: { color: '#444', marginTop: 5 }
 });

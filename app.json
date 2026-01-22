@@ -24,7 +24,24 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
-    }
+    "favicon": "./assets/logo.png",
+    "bundler": "metro",
+    "output": "single",
+    "meta": {
+      "viewport": "width=device-width, initial-scale=1, shrink-to-fit=no",
+      "apple-mobile-web-app-capable": "yes",
+      "apple-mobile-web-app-status-bar-style": "default"
+    },
+    "description": "Gestion zen de votre colocation",
+    "config": {
+      "pwa": {
+        "manifest": "./public/manifest.json" 
+      }
+    },
+    "head": [
+      ["link", { "rel": "manifest", "href": "/manifest.json" }],
+      ["meta", { "name": "theme-color", "content": "#205C3B" }]
+    ]
   }
+}
 }

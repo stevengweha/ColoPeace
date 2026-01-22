@@ -14,6 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../../services/api';
 import { connectSocket } from '../../services/socket';
 import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 
 // ----------------------------
 // COULEURS DE MARQUE (IDENTIQUES À LOGIN.TSX)
@@ -45,6 +47,12 @@ export default function Register({ onRegister }: { onRegister: (user: any) => vo
     try {
       const res = await api.post('/auth/register', { name, email, password });
       const user = res.data.user || res.data;
+      
+      await AsyncStorage.setItem(
+        "@colopeace_user",
+        JSON.stringify(user)
+      );
+
       onRegister(user);
       connectSocket(user._id || user.id);
       // navigation.navigate('Conversations' as never); // Assurez-vous que 'Conversations' est une route valide
