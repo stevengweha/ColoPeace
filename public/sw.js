@@ -2,7 +2,7 @@
 // public/sw.js - Service Worker ColoPeace
 // ==========================================
 
-const CACHE_NAME = 'colopeace-v3'; 
+const CACHE_NAME = 'colopeace-v4'; 
 
 // 1. GESTION DES FICHIERS
 self.addEventListener('fetch', (event) => {

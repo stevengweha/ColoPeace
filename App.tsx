@@ -3,6 +3,7 @@ import { View, Vibration, Platform } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons } from "@expo/vector-icons";
 
 // 🔔 NOTIFICATIONS & SOCKET
 import FlashMessage, { showMessage } from "react-native-flash-message";
