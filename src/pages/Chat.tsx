@@ -102,7 +102,7 @@ export default function Chat() {
               <Ionicons 
                 name={item.readAt ? "checkmark-done" : "checkmark"} 
                 size={16} 
-                color={item.readAt ? "#07e71a" : "#999"} 
+                color={item.readAt ? "#067bbe" : "#999"} 
               />
             </View>
           )}

@@ -2,7 +2,7 @@
 // public/sw.js - Service Worker ColoPeace
 // ==========================================
 
-const CACHE_NAME = 'colopeace-v2'; // Augmente ce chiffre (v3, v4...) pour forcer un nettoyage
+const CACHE_NAME = 'colopeace-v3'; // Augmente ce chiffre (v3, v4...) pour forcer un nettoyage
 
 // 1. GESTION DES FICHIERS (Corrige la mise à jour et la lenteur)
 self.addEventListener('fetch', (event) => {
