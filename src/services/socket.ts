@@ -6,7 +6,7 @@ import { Platform } from "react-native";
 // Si tu testes sur SIMULATEUR iOS : utilise "http://localhost:5001"
 // Si tu testes sur un VRAI TÉLÉPHONE : utilise l'IP de ton PC (ex: "http://192.168.1.15:5001")
 
-const SOCKET_URL = "http://192.168.1.115:5001"; // <--- REMPLACE ICI SI BESOIN
+const SOCKET_URL = "https://colopeace.onrender.com/"; // <--- REMPLACE ICI SI BESOIN
 
 let socket: Socket | null = null;
 
