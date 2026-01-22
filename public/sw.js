@@ -2,7 +2,7 @@
 // public/sw.js - Service Worker ColoPeace
 // ==========================================
 
-const CACHE_NAME = 'colopeace-v4'; 
+const CACHE_NAME = 'colopeace-v5'; 
 
 // 1. GESTION DES FICHIERS
 self.addEventListener('fetch', (event) => {
@@ -46,19 +46,19 @@ self.addEventListener('push', (event) => {
   }
 
   // On vérifie si l'app est ouverte et visible avant d'afficher la notif système
-  const promiseChain = clients.matchAll({
+ const promiseChain = clients.matchAll({
     type: 'window',
     includeUncontrolled: true
   }).then((windowClients) => {
-    // Est-ce qu'une fenêtre de l'app est actuellement au premier plan ?
-    const isAppVisible = windowClients.some(client => client.visibilityState === 'visible');
+    // Vérification simplifiée : y a-t-il au moins une fenêtre de l'app lancée ?
+    const isAppOpen = windowClients.length > 0;
 
-    if (isAppVisible) {
-      console.log("🚫 App visible : on laisse le Socket gérer la notif in-app.");
-      return; // On stoppe ici, pas de notification système
+    if (isAppOpen) {
+      console.log("🚫 App ouverte : le Socket s'occupe de l'affichage.");
+      return; 
     }
 
-    // Si l'app est fermée ou en arrière-plan, on affiche la notif
+    // Uniquement si l'app est totalement FERMÉE
     return self.registration.showNotification(data.title, {
       body: data.body,
       icon: '/logo.png',
