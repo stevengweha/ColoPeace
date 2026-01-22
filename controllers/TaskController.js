@@ -98,7 +98,16 @@ exports.generateWeeklyTasks = async (req, res) => {
         console.log("Envoi notification tâche assignée via Web Push", payload);
       tasks.push(task);
     }
-
+    if (io) {
+    const globalPayload = {
+      title: "Planning prêt ! 🗓️",
+      body: "Les tâches de la semaine ont été distribuées. Allez voir !",
+      type: "task",
+      url: "/tasks"
+    };
+    io.emit("notification_global", globalPayload);
+    console.log("📢 Notification globale du planning envoyée");
+    }
     
 
     res.status(201).json({ message: "Tâches générées.", tasks });
@@ -152,12 +161,26 @@ exports.completeTask = async (req, res) => {
     };
 
     if (io) {
-      io.emit(`notification_${task.assignedTo._id}`, payload);
-      console.log("Emission notification tâche terminée");
+      // 1. Alerte instantanée pour ceux qui ont l'app ouverte
+      io.emit("notification_global", payload);
+      console.log("📢 Socket: Notification globale envoyée");
     }
-    notificationService.sendNotification(task.assignedTo._id, payload)
-      .catch(err => console.error("❌ Erreur Web Push silencieuse:", err));
-      console.log("Envoi notification tâche terminée via Web Push", payload);
+
+    try {
+      // 2. WEB PUSH : On récupère tous les utilisateurs
+      // Optionnel : tu peux exclure celui qui a fait la tâche avec { _id: { $ne: task.assignedTo._id } }
+      const allUsers = await User.find({ _id: { $ne: task.assignedTo._id } });
+
+      // On envoie le push à tout le monde en parallèle
+      allUsers.forEach(u => {
+        notificationService.sendNotification(u._id, payload)
+          .catch(err => console.log(`Push ignoré pour ${u._id} (pas d'abonnement)`));
+      });
+      
+      console.log(`📡 Web Push: Tentative d'envoi à ${allUsers.length} utilisateurs`);
+    } catch (err) {
+      console.error("❌ Erreur lors de la récupération des users pour le push:", err);
+    }
 
     res.json({ message: "Tâche validée.", task });
   } catch (err) {
