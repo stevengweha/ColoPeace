@@ -87,3 +87,17 @@ exports.deleteMessage = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+// Marquer les messages comme lus dans une conversation
+exports.markMessagesAsRead = async (req, res) => {
+  try {
+    const { conversationId, userId } = req.body;
+    const result = await Message.updateMany(
+      { conversationId, senderId: { $ne: userId }, readAt: null },
+      { $set: { readAt: new Date() } }
+    );
+    res.json({ message: `${result.nModified} messages marqués comme lus.` });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};

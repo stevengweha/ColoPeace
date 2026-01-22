@@ -115,9 +115,28 @@ io.on('connection', (socket) => {
   });
 
   // ✅ Gestion de la lecture
-  socket.on('readMessages', (data) => {
-    // data: { conversationId, userId }
-    socket.to(data.conversationId.toString()).emit('messagesMarkedAsRead', data);
+  socket.on('readMessages', async (data) => { // 1. Ajout de async ici
+  try {
+    const { conversationId, userId } = data;
+
+    // 2. Émettre vers l'autre utilisateur immédiatement (Temps réel)
+    socket.to(conversationId.toString()).emit('markMessagesAsRead', data);
+
+    // 3. Mise à jour en base de données (Persistance)
+    // On utilise await pour s'assurer que l'écriture est terminée
+    const result = await mongoose.model('Message').updateMany(
+      { 
+        conversationId: conversationId, 
+        senderId: { $ne: userId }, 
+        readAt: null 
+      },
+      { $set: { readAt: new Date() } }
+    );
+
+    console.log(`✅ Synchro BDD : ${result.modifiedCount} messages lus.`);
+  } catch (err) {
+    console.error("❌ Erreur mise à jour readAt via socket:", err);
+  }
   });
 
   socket.on('disconnect', () => {
