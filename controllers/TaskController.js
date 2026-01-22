@@ -5,6 +5,7 @@ const moment = require("moment");
 const mongoose = require("mongoose");
 let io;
 const notificationService = require("../services/notification");
+const { sendTaskReminder, sendTaskNew } = require('../services/emailService'); // Vérifie bien le chemin
 
 exports.setSocketIo = (socketIoInstance) => {
   io = socketIoInstance;
@@ -72,6 +73,15 @@ exports.generateWeeklyTasks = async (req, res) => {
         score: POINT_SYSTEM.ASSIGNED // Initialisé à 0
       });
 
+      // 📧 AJOUT DE L'EMAIL ICI
+        if (assignedUser.email) {
+        sendTaskNew(
+            assignedUser.email, 
+            assignedUser.name, 
+            `Nouvelle tâche : ${task.name}` // On adapte le titre
+        ).catch(err => console.error("❌ Erreur envoi email assignation:", err));
+        }
+
       // Historique de l'assignation (Pas de complétion ici !)
       await TaskHistory.create({
         userId: assignedUser._id,
@@ -122,7 +132,10 @@ exports.generateWeeklyTasks = async (req, res) => {
 exports.completeTask = async (req, res) => {
   try {
     const { taskId } = req.params;
-    const { proofImage, note } = req.body; 
+    //note
+    const { note } = req.body;
+    //lire L'image de preuve et la note
+    const proofImage = req.file ? req.file.path : null;
     const task = await Task.findById(taskId).populate("assignedTo", "name");
     if (!task || task.status !== 'pending') {
         return res.status(400).json({ error: "Tâche introuvable ou déjà validée." });
@@ -194,7 +207,7 @@ exports.completeTask = async (req, res) => {
 exports.getUserStats = async (req, res) => {
   try {
     const { userId } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(userId)) return res.status(400).json({ error: "ID invalide" });
+    const now = new Date();
 
     const stats = await Task.aggregate([
       { $match: { assignedTo: new mongoose.Types.ObjectId(userId) } },
@@ -202,17 +215,28 @@ exports.getUserStats = async (req, res) => {
           _id: null,
           totalAssigned: { $sum: 1 },
           done: { $sum: { $cond: [{ $eq: ["$status", "done"] }, 1, 0] } },
-          score: { $sum: "$score" }, // Somme directe du champ score
-          pending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } }
+          score: { $sum: "$score" },
+          pending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } },
+          // 🔥 Détection dynamique du retard pour le front
+          late: { 
+            $sum: { 
+              $cond: [
+                { $and: [
+                  { $eq: ["$status", "pending"] }, 
+                  { $lt: ["$dueDate", now] } // Date dépassée
+                ]}, 
+                1, 0
+              ] 
+            } 
+          }
       }}
     ]);
 
-    res.json(stats[0] || { totalAssigned: 0, done: 0, score: 0, pending: 0 });
+    res.json(stats[0] || { totalAssigned: 0, done: 0, score: 0, pending: 0, late: 0 });
   } catch (err) {
     res.status(500).json({ error: "Erreur stats." });
   }
 };
-
 /**
  * 🔵 Classement global
  */
@@ -278,7 +302,9 @@ exports.getTasksByUser = async (req, res) => {
 exports.getWeeklyTasks = async (req, res) => {
   try {
     const { weekNumber, year } = req.params;
-    const tasks = await Task.find({ weekNumber, year }).populate("assignedTo", "name avatarUrl");
+    const tasks = await Task.find({ weekNumber, year })
+        .populate("assignedTo", "name avatarUrl")
+        .sort({ doneAt: - 1, name: 1 });
     res.json(tasks);
   } catch (err) {
     res.status(500).json({ error: err.message });

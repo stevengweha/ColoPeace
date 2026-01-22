@@ -9,6 +9,9 @@ router.post('/register', authController.register);
 // Connexion
 router.post('/login', authController.login);
 
+// clerk routes (à ajouter si utilisation de Clerk)
+router.post('/clerk-login', authController.clerkLogin);
+
 // Récupérer tous les utilisateurs (protégé)
 router.get('/users', authenticateJWT, authController.getAllUsers);
 

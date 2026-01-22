@@ -65,3 +65,54 @@ exports.getAllUsers = async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
+
+const { createClerkClient } = require('@clerk/clerk-sdk-node');
+const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
+
+// =============================
+// Login via Clerk (Google/Apple)
+// =============================
+exports.clerkLogin = async (req, res) => {
+  try {
+    const { clerkToken } = req.body;
+
+    // 1. Vérifier le token Clerk
+    const decoded = await clerkClient.verifyToken(clerkToken);
+    
+    if (!decoded) return res.status(401).json({ message: 'Token Clerk invalide.' });
+
+    // 2. Récupérer les infos complètes de l'utilisateur chez Clerk
+    const clerkUser = await clerkClient.users.getUser(decoded.sub);
+    const email = clerkUser.emailAddresses[0].emailAddress;
+
+    // 3. Chercher ou Créer l'utilisateur dans TA base MongoDB
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      user = new User({
+        name: clerkUser.firstName || "Coloc",
+        email: email,
+        password: "OAUTH_USER", // On met un flag pour les users sans MDP
+        avatarUrl: clerkUser.imageUrl,
+        role: 'user'
+      });
+      await user.save();
+    }
+
+    // 4. Générer TON token JWT habituel (celui que ton middleware comprend)
+    const token = jwt.sign(
+      { userId: user._id, role: user.role }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '24h' }
+    );
+
+    // 5. Réponse identique à ton login classique
+    res.json({ token, user });
+
+  } catch (err) {
+    console.error("Erreur Bridge Clerk:", err);
+    res.status(500).json({ message: 'Erreur authentification Google', error: err.message });
+  }
+};
+
+// =============================

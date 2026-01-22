@@ -74,3 +74,31 @@ exports.savePushSubscription = async (req, res) => {
     res.status(500).json({ error: "Erreur lors de l'enregistrement" });
   }
 };
+
+// Mettre à jour l'avatar de l'utilisateur
+exports.updateAvatar = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // L'URL sécurisée générée par Cloudinary
+    const avatarUrl = req.file ? req.file.path : null;
+
+    if (!avatarUrl) {
+      return res.status(400).json({ error: "Aucun fichier image reçu." });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      id, 
+      { avatarUrl: avatarUrl }, 
+      { new: true }
+    );
+
+    if (!user) return res.status(404).json({ error: 'Utilisateur non trouvé' });
+
+    res.json(typeof user.toPublic === 'function' ? user.toPublic() : {
+      _id: user._id, name: user.name, avatarUrl: user.avatarUrl
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};

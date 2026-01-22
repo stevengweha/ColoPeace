@@ -6,6 +6,8 @@ const bodyParser = require('body-parser');
 const http = require('http');
 const { Server } = require('socket.io');
 const cron = require('node-cron'); // Import déplacé en haut
+const uploadCloudinary = require('./middleware/cloudinaryConfig');
+const cloudinary = require('cloudinary').v2;
 
 dotenv.config();
 const app = express();
@@ -62,11 +64,12 @@ app.get('/api/users', userController.getAllUsers);
 app.get('/api/users/:id', userController.getUserById);
 app.put('/api/users/:id', userController.updateUser);
 app.delete('/api/users/:id', userController.deleteUser);
+app.post('/api/users/upload-avatar/:id', uploadCloudinary.single('avatar'), userController.updateAvatar);
 
 // Routes tâches
 app.post('/api/tasks/generate-weekly', taskController.generateWeeklyTasks);
 app.get('/api/tasks/week/:weekNumber/:year', taskController.getWeeklyTasks);
-app.put('/api/tasks/complete/:taskId', taskController.completeTask);
+app.put('/api/tasks/complete/:taskId',uploadCloudinary.single('proofImage'), taskController.completeTask);
 app.get('/api/tasks/user/:userId', taskController.getTasksByUser);
 app.get('/api/tasks/report/equity', taskController.getEquityReport); 
 app.get('/api/tasks/user/:userId/stats', taskController.getUserStats); 
@@ -118,7 +121,7 @@ io.on('connection', (socket) => {
   socket.on('readMessages', async (data) => {
     // data: { conversationId, userId }
     const { conversationId, userId } = data;
-    
+
 
     socket.to(data.conversationId.toString()).emit('markMessagesAsRead', data);
 
@@ -174,6 +177,31 @@ cron.schedule('0 8 * * *', async () => {
 // Route test
 app.get('/', (req, res) => res.send('✅ ColoPeace API is running'));
 
+app.get('/api/debug-cloudinary', async (req, res) => {
+  const cloudinary = require('cloudinary').v2;
+
+  // On injecte les clés DIRECTEMENT ici
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_NAME,
+    api_key: process.env.CLOUDINARY_KEY,
+    api_secret: process.env.CLOUDINARY_SECRET,
+    secure: true
+  });
+
+  try {
+    // On vérifie si la config a bien "mordu"
+    const configCheck = cloudinary.config();
+    if (!configCheck.api_key) {
+       return res.status(500).json({ error: "La config a échoué à l'injection" });
+    }
+
+    const result = await cloudinary.uploader.upload("https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png");
+    res.json({ message: "ENFIN !", url: result.secure_url });
+  } catch (err) {
+    res.status(500).json({ error: "Toujours pas...", detail: err.message });
+  }
+});
+
 // ==================
 // Route temporaire de test (à supprimer après)
 // ✅ Route de test dynamique via Postman
@@ -215,4 +243,6 @@ server.listen(PORT, '0.0.0.0', () => {
     📡 Socket.io: Prêt
     ⏰ Cron Jobs: Configurés
     `);
+    console.log("Cloud Name Check:", process.env.CLOUDINARY_NAME);
+console.log("API Key Check:", process.env.CLOUDINARY_KEY);
 });
