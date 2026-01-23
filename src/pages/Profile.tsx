@@ -77,7 +77,7 @@ export default function Profile() {
       } as any);
 
       // On utilise l'instance API sans headers JSON globaux
-      const response = await api.post(`/users/upload-avatar/${user._id}`, formData, {
+      const response = await api.post(`/api/users/upload-avatar/${user._id}`, formData, {
         transformRequest: (data) => data, 
       });
 
