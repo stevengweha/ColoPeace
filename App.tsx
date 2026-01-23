@@ -113,6 +113,13 @@ function RootNavigation() {
   }, [user]);
 
   const triggerNotification = (data: any) => {
+    // 1. On prévient le Service Worker de NE PAS afficher cette notification
+      if (Platform.OS === 'web' && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.controller?.postMessage({
+          type: 'STOP_NOTIFICATION',
+          tag: data.conversationId?.toString() || 'chat-notif'
+        });
+      }
     try { Vibration.vibrate([0, 150, 100, 150]); } catch (e) {}
     showMessage({
       message: data.title || "Message",

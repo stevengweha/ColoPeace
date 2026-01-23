@@ -52,32 +52,31 @@ self.addEventListener('push', (event) => {
 
   const notificationTag = data.conversationId?.toString() || 'chat-notif';
 
-  // 🚫 CONDITION 1 : Le signal de l'App (STOP_NOTIFICATION)
-  if (lastNotificationTag && notificationTag === lastNotificationTag) {
-    console.log("🚫 Doublon bloqué par postMessage");
-    return;
-  }
+  const promiseChain = clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true
+  }).then((windowClients) => {
+    // CONDITION A : Est-ce qu'une fenêtre est visible au premier plan ?
+    const isAppActive = windowClients.some(client => client.visibilityState === 'visible');
 
-  const promiseChain = clients.matchAll({ type: 'window', includeUncontrolled: true })
-    .then((windowClients) => {
-      // 🚫 CONDITION 2 : L'app est-elle visible ?
-      const isVisible = windowClients.some(c => c.visibilityState === 'visible' || c.focused);
-      
-      if (isVisible) {
-        console.log("🚫 Doublon bloqué : App au premier plan");
-        return;
-      }
+    // CONDITION B : Est-ce qu'on a reçu un STOP_NOTIFICATION récemment pour ce tag ?
+    const isBlockedByApp = (lastNotificationTag === notificationTag);
 
-      // Si on arrive ici, l'app est fermée : on affiche
-      return self.registration.showNotification(data.title || "Message", {
-        body: data.body || "",
-        icon: '/logo.png',
-        badge: '/logo.png',
-        tag: notificationTag,
-        renotify: true,
-        data: { url: data.url || '/' }
-      });
+    if (isAppActive || isBlockedByApp) {
+      console.log("🚫 Notification Push ignorée : L'utilisateur est déjà sur l'app.");
+      return; 
+    }
+
+    // Si on est ici, l'app est vraiment fermée ou en arrière-plan
+    return self.registration.showNotification(data.title || "Nouveau message", {
+      body: data.body || "",
+      icon: '/logo.png',
+      badge: '/logo.png',
+      tag: notificationTag, // Important pour regrouper les messages
+      renotify: true,
+      data: { url: data.url || '/' }
     });
+  });
 
   event.waitUntil(promiseChain);
 });
