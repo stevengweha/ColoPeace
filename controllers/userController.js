@@ -79,14 +79,15 @@ exports.savePushSubscription = async (req, res) => {
 exports.updateAvatar = async (req, res) => {
   try {
     const { id } = req.params;
-
-    // L'URL sécurisée générée par Cloudinary
+    // Cloudinary via Multer stocke l'URL finale dans req.file.path
     const avatarUrl = req.file ? req.file.path : null;
 
     if (!avatarUrl) {
       return res.status(400).json({ error: "Aucun fichier image reçu." });
     }
 
+    // 1. Mise à jour de l'utilisateur
+    // { new: true } est vital pour récupérer l'objet APRES modification
     const user = await User.findByIdAndUpdate(
       id, 
       { avatarUrl: avatarUrl }, 
@@ -95,10 +96,18 @@ exports.updateAvatar = async (req, res) => {
 
     if (!user) return res.status(404).json({ error: 'Utilisateur non trouvé' });
 
-    res.json(typeof user.toPublic === 'function' ? user.toPublic() : {
-      _id: user._id, name: user.name, avatarUrl: user.avatarUrl
+    // 2. On renvoie l'objet utilisateur COMPLET mis à jour
+    // On s'assure que avatarUrl est bien présent dans la réponse
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      avatarUrl: user.avatarUrl, // L'URL Cloudinary
+      phone: user.phone
     });
+    console.log("Avatar mis à jour avec succès pour l'utilisateur :", user._id);
   } catch (err) {
+    console.error("Erreur Backend upload:", err);
     res.status(500).json({ error: err.message });
   }
 };
