@@ -2,7 +2,7 @@
 // public/sw.js - Service Worker ColoPeace v7
 // ==========================================
 
-const CACHE_NAME = 'test-v8-2024-06-20'; 
+const CACHE_NAME = 'test-v10-2024-06-20'; 
 
 // --- SYNC INTER-APP ---
 // --- SYNC INTER-APP (NOUVELLE MÉTHODE) ---
@@ -65,35 +65,32 @@ self.addEventListener('push', (event) => {
 
   const pushTag = data.conversationId ? String(data.conversationId) : 'chat-notif';
 
+
   const promiseChain = clients.matchAll({ type: 'window', includeUncontrolled: true })
-    .then((windowClients) => {
-      const isAppActive = windowClients.some(client => client.visibilityState === 'visible');
-      const isBlocked = (lastNotificationTag !== null && String(lastNotificationTag) === pushTag);
+  .then((windowClients) => {
+    const isAppActive = windowClients.some(client => client.visibilityState === 'visible');
+    const isBlocked = (lastNotificationTag !== null && String(lastNotificationTag) === pushTag);
 
-      console.log(`🧐 Analyse : Tag=${pushTag} | Bloqué=${isBlocked} | Active=${isAppActive}`);
+    console.log(`🧐 Analyse : Tag=${pushTag} | Bloqué=${isBlocked} | Active=${isAppActive}`);
 
-      // Si l'app est fermée, isAppActive sera FALSE et isBlocked sera FALSE
-      if (isAppActive || isBlocked) {
-        return null; 
-      }
+    // SI L'APP EST OUVERTE OU DÉJÀ NOTIFIÉE PAR SOCKET -> ON SORT
+    if (isAppActive || isBlocked) {
+      return Promise.resolve(); 
+    }
 
-      // OPTIONS DE NOTIFICATION ULTRA-COMPATIBLES
-      const options = {
-        body: data.body || "Nouveau message reçu",
-        tag: pushTag,
-        renotify: true,
-        data: { url: data.url || '/' },
-        icon: '/logo.png',
-        badge: '/logo.png',
-        // Supprime temporairement icon/badge pour tester si c'est eux qui bloquent
-        vibrate: [100, 50, 100]
-      };
-
-      return self.registration.showNotification(data.title || "ColoPeace 💬", options);
+    // SINON ON FORCE L'AFFICHAGE
+    return self.registration.showNotification(data.title || "ColoPeace 💬", {
+      body: data.body || "Nouveau message reçu",
+      tag: pushTag,
+      renotify: true,
+      data: { url: data.url || '/' },
+      icon: '/logo.png',
+      badge: '/logo.png',
+      vibrate: [100, 50, 100]
     });
+  });
 
-  event.waitUntil(promiseChain);
-});
+event.waitUntil(promiseChain);
 
 // 4. CLIC
 self.addEventListener('notificationclick', (event) => {

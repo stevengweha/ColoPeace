@@ -186,7 +186,6 @@ export function TaskDetailView({ task, currentUserId, onBack, onSuccess }: { tas
       formData.append('note', note);
 
       const res = await api.put(`/tasks/complete/${task._id}`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
         transformRequest: (data) => data,
       });
 

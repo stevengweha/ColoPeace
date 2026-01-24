@@ -45,6 +45,38 @@ const tokenCache = {
 
 const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
+// Fonction pour transformer la clé VAPID
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+}
+
+// Fonction pour synchroniser le push
+const syncPushSubscription = async (userId) => {
+  if (Platform.OS !== 'web' || !('serviceWorker' in navigator)) return;
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const vapidKey = urlBase64ToUint8Array(process.env.EXPO_PUBLIC_VAPID_PUBLIC_KEY);
+    
+    const sub = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: vapidKey
+    });
+
+    // On envoie cet abonnement au backend
+    await api.post("/users/update-push", {
+      userId: userId,
+      subscription: sub
+    });
+    console.log("🚀 Push synchronisé pour l'utilisateur:", userId);
+  } catch (err) {
+    console.error("❌ Erreur Push Sync:", err);
+  }
+};
+
 // 🎯 RÉFÉRENCE DE NAVIGATION GLOBALE
 const navigationRef = createRef<any>();
 const Stack = createNativeStackNavigator();
@@ -101,6 +133,8 @@ function RootNavigation() {
       const socket = getSocket();
       socket.emit("userOnline", userId);
       
+      // Synchronisation de l'abonnement Push
+      syncPushSubscription(userId);
 
       const userChannel = `notification_${userId}`;
       socket.on(userChannel, triggerNotification);
