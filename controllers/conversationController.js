@@ -43,12 +43,26 @@ exports.getAllConversations = async (req, res) => {
 };
 
 // Récupérer une conversation par ID
-exports.getConversationById = async (req, res) => {
+exports.getConversationsByUser = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id)
-      .populate('participants', 'name avatarUrl');
-    if (!conversation) return res.status(404).json({ error: 'Conversation non trouvée' });
-    res.json(conversation);
+    const conversations = await Conversation.find({
+      participants: req.params.userId
+    })
+    .populate('participants', 'name avatarUrl')
+    .lean();
+
+    // On récupère le dernier message pour CHAQUE conversation
+    const enhancedConversations = await Promise.all(
+      conversations.map(async (conv) => {
+        const lastMessage = await Message.findOne({ conversationId: conv._id })
+          .sort({ createdAt: -1 }) // Le plus récent
+          .lean();
+        return { ...conv, lastMessage };
+      })
+    );
+
+    // On renvoie la liste enrichie
+    res.json(enhancedConversations);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -76,14 +90,3 @@ exports.deleteConversation = async (req, res) => {
   }
 };
 
-// Dans ton controller de conversation, ajoute cette fonction pour filtrer
-exports.getConversationsByUser = async (req, res) => {
-  try {
-    const conversations = await Conversation.find({
-      participants: req.params.userId
-    }).populate('participants', 'name avatarUrl');
-    res.json(conversations);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};

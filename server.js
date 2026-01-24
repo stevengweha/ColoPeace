@@ -88,6 +88,7 @@ app.get('/api/conversations/user/:userId', conversationController.getConversatio
 app.post('/api/messages', messageController.createMessage);
 app.get('/api/messages/conversation/:conversationId', messageController.getMessagesByConversation);
 app.delete('/api/messages/:id', messageController.deleteMessage);
+app.post('/api/messages/mark-read', messageController.markMessagesAsRead);
 
 // route notification subscription
 app.post('/api/users/subscribe', userController.savePushSubscription);
@@ -150,6 +151,8 @@ io.on('connection', (socket) => {
   });
 });
 
+
+
 // ==================
 // Cron Jobs (Emails)
 // ==================
@@ -179,7 +182,6 @@ app.get('/', (req, res) => res.send('✅ ColoPeace API is running'));
 
 app.get('/api/debug-cloudinary', async (req, res) => {
   const cloudinary = require('cloudinary').v2;
-
   // On injecte les clés DIRECTEMENT ici
   cloudinary.config({
     cloud_name: process.env.CLOUDINARY_NAME,
@@ -187,14 +189,12 @@ app.get('/api/debug-cloudinary', async (req, res) => {
     api_secret: process.env.CLOUDINARY_SECRET,
     secure: true
   });
-
   try {
     // On vérifie si la config a bien "mordu"
     const configCheck = cloudinary.config();
     if (!configCheck.api_key) {
        return res.status(500).json({ error: "La config a échoué à l'injection" });
     }
-
     const result = await cloudinary.uploader.upload("https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png");
     res.json({ message: "ENFIN !", url: result.secure_url });
   } catch (err) {
