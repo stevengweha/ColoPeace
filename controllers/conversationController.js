@@ -90,3 +90,21 @@ exports.deleteConversation = async (req, res) => {
   }
 };
 
+// conversation by id
+// Dans controllers/conversationController.js
+
+// Récupérer une conversation spécifique par son ID
+exports.getConversationById = async (req, res) => {
+  try {
+    const conversation = await Conversation.findById(req.params.id)
+      .populate('participants', 'name avatarUrl');
+    
+    if (!conversation) {
+      return res.status(404).json({ message: 'Conversation non trouvée' });
+    }
+    
+    res.json(conversation);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
