@@ -13,13 +13,12 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import api from "../services/api";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import moment from "moment";
 import 'moment/locale/fr';
 
 moment.locale('fr');
 
-// --- Types ---
 type StatsType = {
   totalAssigned: number;
   done: number;
@@ -35,20 +34,20 @@ export default function TasksWeek({ user }: { user: any }) {
 
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<StatsType>({
-    totalAssigned: 0,
-    done: 0,
-    late: 0,
-    pending: 0,
-    score: 0,
+    totalAssigned: 0, done: 0, late: 0, pending: 0, score: 0,
   });
   const [convCount, setConvCount] = useState(0);
-  const [lastActivity, setLastActivity] = useState<any>(null);
+  
+  // LOGIQUE DU DIAPORAMA
+  const [recentTasks, setRecentTasks] = useState<any[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
-  const loadDashboardData = useCallback(async () => {
+  // 1️⃣ FONCTION DE CHARGEMENT DES DONNÉES
+  const loadDashboardData = useCallback(async (isSilent = false) => {
     if (!userId) return;
-    setLoading(true);
+    if (!isSilent) setLoading(true);
+
     try {
-      // 1. Appel parallèle pour les stats, messages et tâches de la semaine
       const [statsRes, convsRes, allTasksRes] = await Promise.all([
         api.get(`/tasks/user/${userId}/stats`),
         api.get("/conversations"),
@@ -58,82 +57,54 @@ export default function TasksWeek({ user }: { user: any }) {
       setStats(statsRes.data);
       setConvCount(convsRes.data?.length || 0);
 
-      // 2. Extraction de la dernière activité (dernière tâche validée avec photo)
-      const lastDone = allTasksRes.data
-        .filter((t: any) => t.status === "done" && t.proofImage)
-        .sort((a: any, b: any) => moment(b.doneAt).diff(moment(a.doneAt)))[0];
+      // Filtrer : Fait + Photo + PAS en retard
+      const successTasks = allTasksRes.data
+        .filter((t: any) => t.status === "done" && t.proofImage && t.status !== "late")
+        .sort((a: any, b: any) => moment(b.doneAt).diff(moment(a.doneAt)));
       
-      setLastActivity(lastDone);
-
+      setRecentTasks(successTasks);
     } catch (err: any) {
-      console.error("Erreur Dashboard:", err);
-      // Fallback si la route stats échoue
-      try {
-        const tasksRes = await api.get(`/tasks/user/${userId}`);
-        const tasks = tasksRes.data || [];
-        setStats({
-          totalAssigned: tasks.length,
-          done: tasks.filter((t: any) => t.status === "done").length,
-          pending: tasks.filter((t: any) => t.status !== "done").length,
-          late: tasks.filter((t: any) => t.status === "late").length,
-          score: 0
-        });
-      } catch (e) {
-        Alert.alert("Erreur", "Impossible de rafraîchir les données.");
-      }
+      console.error("Erreur Sync Dashboard:", err);
     } finally {
-      setTimeout(() => setLoading(false), 300);
+      setLoading(false);
     }
   }, [userId]);
 
+  // 2️⃣ RÉACTIVITÉ INSTANTANÉE (Dès qu'on arrive sur l'écran)
+  useFocusEffect(
+    useCallback(() => {
+      loadDashboardData();
+    }, [loadDashboardData])
+  );
+
+  // 3️⃣ MISE À JOUR AUTOMATIQUE (Polling toutes les 30 secondes pour le "temps réel")
   useEffect(() => {
-    loadDashboardData();
+    const interval = setInterval(() => {
+      loadDashboardData(true); // "true" pour charger sans afficher l'icône de chargement
+    }, 30000); 
+
+    return () => clearInterval(interval);
   }, [loadDashboardData]);
 
-  // 🎯 Configuration dynamique des tuiles
-  const tiles = useMemo(() => ([
-    { 
-      title: "Messages", 
-      icon: "chatbubble-ellipses-outline", 
-      value: convCount, 
-      route: "Conversations", 
-      color: "#1E88E5" 
-    },
-    { 
-      title: "À faire", 
-      icon: stats.late > 0 ? "alert-circle" : "time-outline", 
-      value: stats.pending, 
-      route: "MyTasksFocus", 
-      color: stats.late > 0 ? "#E74C3C" : "#205C3B" // Rouge si retard, vert sinon
-    },
-    { 
-      title: "Mes points", 
-      icon: "trophy-outline", 
-      value: stats.score, 
-      route: "Taskshistory", 
-      color: "#6A1B9A" 
-    },
-    { 
-      title: "Colocs", 
-      icon: "people-outline", 
-      value: "Voir", 
-      route: "Users", 
-      color: "#00838F" 
-    },
-    { 
-      title: "Caisse", 
-      icon: "cash-outline", 
-      value: "30€", 
-      route: "Caisse", 
-      color: "#D4AF37" 
-    },
-    { 
-      title: "Courses", 
-      icon: "cart-outline", 
-      value: "!", 
-      route: "ListeAchats", 
-      color: "#F39C12" 
+  // 4️⃣ ROTATION DU DIAPORAMA (Toutes les 5 secondes)
+  useEffect(() => {
+    if (recentTasks.length > 1) {
+      const timer = setInterval(() => {
+        setCurrentIndex((prev) => (prev + 1) % recentTasks.length);
+      }, 5000);
+      return () => clearInterval(timer);
     }
+  }, [recentTasks]);
+
+  const activeTask = recentTasks[currentIndex];
+
+  const tiles = useMemo(() => ([
+    { title: "Messages", icon: "chatbubble-ellipses-outline", value: convCount, route: "Conversations", color: "#1E88E5" },
+    { title: "À faire", icon: stats.late > 0 ? "alert-circle" : "time-outline", value: stats.pending, route: "MyTasksFocus", color: stats.late > 0 ? "#E74C3C" : "#205C3B" },
+    { title: "Mes points", icon: "trophy-outline", value: stats.score, route: "Taskshistory", color: "#6A1B9A" },
+    { title: "Colocs", icon: "people-outline", value: "Voir", route: "Users", color: "#00838F" },
+    { title: "Caisse", icon: "cash-outline", value: "30€", route: "Caisse", color: "#D4AF37" },
+    { title: "Courses", icon: "cart-outline", value: "!", route: "ListeAchats", color: "#F39C12" }
   ]), [stats, convCount]);
 
   if (loading) return (
@@ -142,67 +113,68 @@ export default function TasksWeek({ user }: { user: any }) {
     </View>
   );
 
-  const isLargeScreen = width > 768;
-  const itemWidth = isLargeScreen ? "31.3%" : "48%";
+  const itemWidth = width > 768 ? "31.3%" : "48.5%";
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       
-      {/* HEADER DYNAMIQUE */}
       <View style={styles.headerSection}>
         <Text style={styles.title}>Salut {user?.name || "Coloc"} !</Text>
         <Text style={[styles.subtitle, stats.late > 0 && { color: '#E74C3C', fontWeight: 'bold' }]}>
-          {stats.late > 0 
-            ? `⚠️ Tu as ${stats.late} tâche(s) en retard !` 
-            : `Tu as ${stats.pending} tâches à valider.`}
+          {stats.late > 0 ? `⚠️ ${stats.late} retard(s) !` : `Tu as ${stats.pending} tâches à faire.`}
         </Text>
       </View>
 
-      {/* 📸 FEED D'ACTIVITÉ (Le mur de la gloire) */}
-{lastActivity && (
-  <TouchableOpacity 
-    style={styles.feedCard}
-    onPress={() => navigation.navigate("Taskshistory")}
-  >
-    {/* Image de preuve en fond */}
-    <Image source={{ uri: lastActivity.proofImage }} style={styles.feedImage} />
-    
-    {/* Overlay pour dégradé ou lisibilité */}
-    <View style={styles.feedOverlay}>
-      
-      {/* 👤 Infos de l'utilisateur (Avatar + Nom) */}
-      <View style={styles.userInfoRow}>
-        <Image 
-          source={{ uri: lastActivity.assignedTo?.avatarUrl || 'https://via.placeholder.com/40' }} 
-          style={styles.userAvatar} 
-        />
-        <View>
-          <Text style={styles.userNameText}>{lastActivity.assignedTo?.name}</Text>
-          <Text style={styles.feedTime}>{moment(lastActivity.doneAt).fromNow()}</Text>
-        </View>
-      </View>
+      {/* 📸 DIAPORAMA AUTO-RÉACTIF */}
+      {activeTask && (
+        <View style={styles.feedCardContainer}>
+          <TouchableOpacity 
+            style={styles.feedCard}
+            onPress={() => navigation.navigate("Taskshistory")}
+            activeOpacity={0.9}
+          >
+            <Image 
+              source={{ uri: activeTask.proofImage }} 
+              style={styles.feedImage} 
+              key={activeTask._id} // Important pour forcer le rafraîchissement d'image
+            />
+            
+            <View style={styles.feedOverlay}>
+              <View style={styles.feedTopRow}>
+                <View style={styles.userInfoRow}>
+                  <Image 
+                    source={{ uri: activeTask.assignedTo?.avatarUrl || 'https://via.placeholder.com/40' }} 
+                    style={styles.userAvatar} 
+                  />
+                  <View>
+                    <Text style={styles.userNameText}>{activeTask.assignedTo?.name}</Text>
+                    <Text style={styles.feedTime}>{moment(activeTask.doneAt).fromNow()}</Text>
+                  </View>
+                </View>
+                <View style={styles.scoreBadge}>
+                  <Text style={styles.scoreText}>+{activeTask.score || 10} pts</Text>
+                </View>
+              </View>
 
-      <View style={styles.feedContent}>
-        <View style={styles.feedBadge}>
-           <Text style={styles.feedBadgeText}>DERNIÈRE RÉUSSITE</Text>
+              <View style={styles.feedBottomContent}>
+                <Text style={styles.taskNameText} numberOfLines={1}>{activeTask.name}</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+          
+          <View style={styles.paginationDots}>
+            {recentTasks.slice(0, 8).map((_, i) => (
+              <View key={i} style={[styles.dot, currentIndex === i && styles.activeDot]} />
+            ))}
+          </View>
         </View>
-        <Text style={styles.taskNameText}>A validé : {lastActivity.name}</Text>
-      </View>
-      
-    </View>
-  </TouchableOpacity>
-)}
+      )}
 
-      {/* GRILLE DE TUILES */}
       <View style={styles.grid}>
         {tiles.map((t, i) => (
-          <TouchableOpacity
-            key={i}
-            style={[styles.tile, { backgroundColor: t.color, width: itemWidth }]}
-            onPress={() => navigation.navigate(t.route)}
-          >
+          <TouchableOpacity key={i} style={[styles.tile, { backgroundColor: t.color, width: itemWidth }]} onPress={() => navigation.navigate(t.route)}>
             <View style={styles.tileHeader}>
-               <Ionicons name={t.icon as any} size={28} color="#fff" />
+               <Ionicons name={t.icon as any} size={26} color="#fff" />
                <Text style={styles.counter}>{t.value}</Text>
             </View>
             <Text style={styles.tileText}>{t.title}</Text>
@@ -215,76 +187,43 @@ export default function TasksWeek({ user }: { user: any }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F8F9FA" },
-  scrollContent: { 
-    padding: 15, 
-    paddingBottom: 100,
-    maxWidth: 1000, 
-    alignSelf: 'center',
-    width: '100%'
-  },
+  scrollContent: { padding: 16, paddingBottom: 100, maxWidth: 900, alignSelf: 'center', width: '100%' },
   loading: { flex: 1, justifyContent: "center", alignItems: "center" },
-  headerSection: { marginBottom: 20, marginTop: 10 },
-  title: { fontSize: 28, fontWeight: "900", color: "#1A1A1A" },
-  subtitle: { fontSize: 16, color: "#666", marginTop: 5 },
+  headerSection: { marginBottom: 20 },
+  title: { fontSize: 26, fontWeight: "900", color: "#1A1A1A" },
+  subtitle: { fontSize: 15, color: "#666", marginTop: 4 },
   
-  // Styles du Feed
+  feedCardContainer: { marginBottom: 25 },
   feedCard: {
-    height: 150,
+    height: 190,
     width: '100%',
     borderRadius: 24,
-    marginBottom: 25,
     overflow: 'hidden',
-    backgroundColor: '#000',
-    elevation: 4,
+    backgroundColor: '#1A1A1A',
+    elevation: 8,
     shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
   },
-  feedImage: { width: '100%', height: '100%', opacity: 0.6 },
-  feedOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 15,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-  },
-  feedBadge: { 
-    backgroundColor: '#27AE60', 
-    alignSelf: 'flex-start', 
-    paddingHorizontal: 8, 
-    paddingVertical: 3, 
-    borderRadius: 6, 
-    marginBottom: 5 
-  },
-  feedBadgeText: { color: '#FFF', fontSize: 9, fontWeight: 'bold' },
-  feedText: { color: '#FFF', fontWeight: '800', fontSize: 15 },
-  feedTime: { color: '#EEE', fontSize: 11, marginTop: 2 },
+  feedImage: { width: '100%', height: '100%', opacity: 0.7, position: 'absolute' },
+  feedOverlay: { flex: 1, justifyContent: 'space-between', padding: 18, backgroundColor: 'rgba(0,0,0,0.2)' },
+  feedTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  userInfoRow: { flexDirection: 'row', alignItems: 'center' },
+  userAvatar: { width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: '#FFF', marginRight: 10 },
+  userNameText: { color: '#FFF', fontWeight: 'bold', fontSize: 15, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 4 },
+  feedTime: { color: '#EEE', fontSize: 10 },
+  scoreBadge: { backgroundColor: '#FFD700', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  scoreText: { color: '#000', fontWeight: '900', fontSize: 13 },
+  feedBottomContent: { marginTop: 'auto' },
+  taskNameText: { color: '#FFF', fontSize: 22, fontWeight: '900', textTransform: 'uppercase', textShadowColor: 'rgba(0,0,0,0.8)', textShadowRadius: 6 },
+  
+  paginationDots: { flexDirection: 'row', justifyContent: 'center', marginTop: 10 },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#CCC', marginHorizontal: 3 },
+  activeDot: { backgroundColor: '#205C3B', width: 12 },
 
-  // Styles de la Grille
-  grid: { 
-    flexDirection: "row", 
-    flexWrap: "wrap", 
-    justifyContent: "space-between" 
-  },
-  tile: { 
-    height: 120, 
-    borderRadius: 22, 
-    padding: 18, 
-    marginBottom: 15, 
-    justifyContent: 'space-between',
-    ...Platform.select({
-      web: { cursor: 'pointer' },
-      default: {
-        elevation: 3,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      }
-    })
-  },
+  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  tile: { height: 110, borderRadius: 20, padding: 16, marginBottom: 12, justifyContent: 'space-between', elevation: 4 },
   tileHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  tileText: { fontSize: 14, fontWeight: "700", color: "#fff", opacity: 0.9 },
-  counter: { fontSize: 22, fontWeight: "900", color: "#fff" }
+  tileText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  counter: { fontSize: 20, fontWeight: "900", color: "#fff" }
 });

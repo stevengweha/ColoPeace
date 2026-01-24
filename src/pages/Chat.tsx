@@ -13,27 +13,35 @@ export default function Chat() {
   const { user } = useContext(UserContext);
   const navigation = useNavigation();
   const route = useRoute<any>();
-  const { id, title } = route.params; 
+  // On récupère participants en plus pour identifier l'autre utilisateur
+  const { id, title, participants } = route.params; 
   
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState('');
   const [otherIsTyping, setOtherIsTyping] = useState(false);
+  const [isOtherOnline, setIsOtherOnline] = useState(false); // État Online
   const flatListRef = useRef<FlatList>(null);
   const socket = getSocket();
 
-  // On extrait l'ID de la conversation proprement
   const conversationIdStr = id?._id || id;
+  const myId = (user?._id || user?.id)?.toString();
 
   useEffect(() => {
     if (!user || !socket) return;
     
-    const myId = (user._id || user.id).toString();
-
     // 1. Rejoindre la room et marquer comme lu
     socket.emit('joinConversation', conversationIdStr);
     socket.emit('readMessages', { conversationId: conversationIdStr, userId: myId });
 
-    // 2. Écouter les nouveaux messages
+    // 2. Écouter le statut en ligne global
+    socket.on('userOnlineStatus', (onlineUserIds: string[]) => {
+      const otherId = participants?.find((p: any) => (p?._id || p).toString() !== myId);
+      if (otherId) {
+        setIsOtherOnline(onlineUserIds.includes(otherId.toString()));
+      }
+    });
+
+    // 3. Écouter les nouveaux messages
     const handleReceive = (msg: any) => {
       const msgConvId = (msg.conversationId?._id || msg.conversationId).toString();
       if (msgConvId === conversationIdStr.toString()) {
@@ -45,7 +53,7 @@ export default function Chat() {
       }
     };
 
-    // 3. Écouter les statuts (typing / read)
+    // 4. Écouter les statuts (typing / read)
     const handleTyping = (data: any) => {
       if (data.conversationId.toString() === conversationIdStr.toString() && data.userId !== myId) {
         setOtherIsTyping(data.typing);
@@ -53,15 +61,16 @@ export default function Chat() {
     };
 
     const handleRead = (data) => {
-  setMessages(prev => prev.map(m => {
-    // Si c'est MON message et qu'il n'a pas encore de date de lecture
-    const isMine = (m.senderId?._id || m.senderId) === (user?._id || user?.id);
-      if (isMine && !m.readAt) {
-       return { ...m, readAt: new Date().toISOString() };
-     }
-      return m;
-     }));
-     };
+      if (data.conversationId.toString() === conversationIdStr.toString() && data.userId !== myId) {
+        setMessages(prev => prev.map(m => {
+          const isMine = (m.senderId?._id || m.senderId) === myId;
+          if (isMine && !m.readAt) {
+            return { ...m, readAt: new Date().toISOString() };
+          }
+          return m;
+        }));
+      }
+    };
 
     socket.on('receiveMessage', handleReceive);
     socket.on('displayTyping', handleTyping);
@@ -74,6 +83,7 @@ export default function Chat() {
       socket.off('receiveMessage', handleReceive); 
       socket.off('displayTyping', handleTyping);
       socket.off('markMessagesAsRead', handleRead);
+      socket.off('userOnlineStatus');
     };
   }, [conversationIdStr, user]);
 
@@ -119,14 +129,29 @@ export default function Chat() {
         </TouchableOpacity>
         <View>
           <Text style={styles.headerTitle}>{title || "Discussion"}</Text>
-          <Text style={styles.headerStatus}>{otherIsTyping ? "en train d'écrire..." : "En ligne"}</Text>
+          {otherIsTyping ? (
+            <Text style={[styles.headerStatus, { color: '#205C3B', fontStyle: 'italic' }]}>en train d'écrire...</Text>
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ 
+                width: 7, 
+                height: 7, 
+                borderRadius: 4, 
+                backgroundColor: isOtherOnline ? '#4CAF50' : '#BDBDBD', 
+                marginRight: 5 
+              }} />
+              <Text style={[styles.headerStatus, { color: isOtherOnline ? '#4CAF50' : '#888' }]}>
+                {isOtherOnline ? "En ligne" : "Hors ligne"}
+              </Text>
+            </View>
+          )}
         </View>
       </View>
 
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
         style={styles.flexContainer}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <FlatList
@@ -167,7 +192,7 @@ const styles = StyleSheet.create({
   chatHeader: { flexDirection: 'row', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#EEE' },
   backBtn: { marginRight: 15 },
   headerTitle: { fontSize: 16, fontWeight: '700' },
-  headerStatus: { fontSize: 12, color: '#4CAF50' },
+  headerStatus: { fontSize: 12 },
   listPadding: { padding: 15 },
   messageRow: { marginBottom: 10, flexDirection: 'row' },
   myRow: { justifyContent: 'flex-end' },

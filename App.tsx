@@ -57,13 +57,27 @@ const syncPushSubscription = async (userId) => {
   if (Platform.OS !== 'web' || !('serviceWorker' in navigator)) return;
 
   try {
+
+    // 1. Demander la permission (Le navigateur bloque le .subscribe() sinon)
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      console.warn("⚠️ Permission de notification refusée.");
+      return;
+    }
+    // 2. Récupérer le service worker et la clé VAPID
     const registration = await navigator.serviceWorker.ready;
     const vapidKey = urlBase64ToUint8Array(process.env.EXPO_PUBLIC_VAPID_PUBLIC_KEY);
-    
-    const sub = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: vapidKey
-    });
+
+    // on recuper l'abonnement existant
+    let sub = await registration.pushManager.getSubscription();
+    // Si pas d'abonnement, on en crée un nouveau
+    if (!sub) {
+      sub = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: vapidKey,
+      });
+      console.log("✅ Nouvel abonnement Push créé.");
+    }
 
     // On envoie cet abonnement au backend
     await api.post("/users/subscribe", {

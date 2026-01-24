@@ -167,49 +167,58 @@ export function TaskDetailView({ task, currentUserId, onBack, onSuccess }: { tas
   };
 
   const handleComplete = async () => {
-    if (!image) {
-      Alert.alert("Erreur", "Veuillez prendre une photo de preuve.");
-      return;
+  if (!image) {
+    Alert.alert("Erreur", "Veuillez prendre une photo de preuve.");
+    return;
+  }
+  
+  setSubmitting(true);
+  try {
+    const formData = new FormData();
+
+    if (Platform.OS === 'web') {
+      const response = await fetch(image);
+      const blob = await response.blob();
+      formData.append('proofImage', blob, 'proof.jpg');
+    } else {
+      const fileName = image.split('/').pop() || 'proof.jpg';
+      formData.append('proofImage', {
+        uri: Platform.OS === 'ios' ? image.replace('file://', '') : image,
+        type: 'image/jpeg',
+        name: fileName,
+      } as any);
     }
-    
-    setSubmitting(true);
-    try {
-      const formData = new FormData();
 
-      if (Platform.OS === 'web') {
-        // ✅ LOGIQUE WEB : On convertit l'URI (blob:...) en vrai Blob binaire
-        const response = await fetch(image);
-        const blob = await response.blob();
-        formData.append('proofImage', blob, 'proof.jpg');
-      } else {
-        // ✅ LOGIQUE MOBILE : Format standard React Native
-        const fileName = image.split('/').pop() || 'proof.jpg';
-        formData.append('proofImage', {
-          uri: Platform.OS === 'ios' ? image.replace('file://', '') : image,
-          type: 'image/jpeg',
-          name: fileName,
-        } as any);
-      }
+    formData.append('note', note);
 
-      formData.append('note', note);
+    const res = await api.put(`/tasks/complete/${task._id}`, formData);
+    const scoreGagne = res.data.task.score;
 
-      // On envoie avec les headers appropriés
-      const res = await api.put(`/tasks/complete/${task._id}`, formData, {
-    
-      });
+    // ✅ Définir une action de sortie claire
+    const finish = () => {
+      onSuccess(); // Cette fonction change la vue dans le parent
+    };
 
-      const scoreGagne = res.data.task.score;
-      Alert.alert("Félicitations ! 🎉", `Score : +${scoreGagne} points !`, [
-        { text: "Génial", onPress: () => onSuccess() }
-      ]);
-
-    } catch (e: any) {
-      console.error("Erreur validation détaillée:", e.response?.data || e.message);
-      Alert.alert("Erreur", e.response?.data?.error || "Impossible de valider.");
-    } finally {
-      setSubmitting(false);
+    if (Platform.OS === 'web') {
+      // Le Web supporte mal les boutons d'Alert.alert natifs de RN
+      alert(`Félicitations ! 🎉 Score : +${scoreGagne} points !`);
+      finish();
+    } else {
+      Alert.alert(
+        "Félicitations ! 🎉", 
+        `Score : +${scoreGagne} points !`,
+        [{ text: "Génial", onPress: finish }],
+        { cancelable: false } // Empêche de fermer sans cliquer sur le bouton
+      );
     }
-  };
+
+  } catch (e: any) {
+    console.error("Erreur validation détaillée:", e.response?.data || e.message);
+    Alert.alert("Erreur", e.response?.data?.error || "Impossible de valider.");
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   return (
     <ScrollView style={styles.detailContainer} bounces={false}>

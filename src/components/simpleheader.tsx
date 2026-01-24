@@ -28,25 +28,21 @@ export default function CustomHeader() {
 
   const isUserConnected = user !== null && user !== undefined;
   const [menuVisible, setMenuVisible] = useState(false);
+
   const toggleMenu = () => setMenuVisible(!menuVisible);
 
   const performLogout = async () => {
     try {
-      // 1️⃣ Déconnexion de Clerk (essentiel pour Google Auth)
       if (isUserConnected) {
         await signOut();
       }
 
-      // 2️⃣ Nettoyage AsyncStorage
       await AsyncStorage.removeItem("@colopeace_user");
-      await AsyncStorage.removeItem("@colopeace_token"); // Au cas où tu stockes le token séparément
+      await AsyncStorage.removeItem("@colopeace_token");
       
-      // 3️⃣ Reset de l'état global
       setUser(null);
       setMenuVisible(false);
       
-      // La navigation va switcher automatiquement vers AuthStack via App.tsx
-      // Mais on peut forcer le reset par sécurité
       navigation.reset({
         index: 0,
         routes: [{ name: "Login" }],
@@ -107,14 +103,25 @@ export default function CustomHeader() {
           resizeMode="cover"
         />
 
+        {/* 📸 REMPLACEMENT DU MENU PAR LA PHOTO OU INITIALE */}
         <TouchableOpacity onPress={toggleMenu} style={styles.iconButton}>
           <View style={styles.menuTrigger}>
-            {isUserConnected && (
-               <Text style={styles.userNameText}>
-                 {user.name?.charAt(0).toUpperCase()}
-               </Text>
+            {isUserConnected ? (
+              user.avatarUrl ? (
+                <Image 
+                  source={{ uri: user.avatarUrl }} 
+                  style={styles.avatarImage} 
+                />
+              ) : (
+                <View style={styles.avatarFallback}>
+                  <Text style={styles.userNameInitial}>
+                    {user.name?.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )
+            ) : (
+              <Ionicons name="person-circle-outline" size={32} color="#205C3B" />
             )}
-            <Ionicons name="menu-outline" size={28} color="#205C3B" />
           </View>
         </TouchableOpacity>
       </View>
@@ -165,24 +172,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16
   },
   logo: { height: 45, width: 45, borderRadius: 22.5 },
-  iconButton: { padding: 6 },
-  menuTrigger: { flexDirection: 'row', alignItems: 'center' },
-  userNameText: { 
-    marginRight: 8, 
+  iconButton: { padding: 4 },
+  
+  // 🎨 STYLES DE L'AVATAR
+  menuTrigger: { 
+    flexDirection: 'row', 
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  avatarImage: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 2,
+    borderColor: '#E8F5E9',
+  },
+  avatarFallback: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#E8F5E9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#205C3B',
+  },
+  userNameInitial: { 
     fontWeight: 'bold', 
     color: '#205C3B', 
     fontSize: 16,
-    backgroundColor: '#E8F5E9',
-    width: 30,
-    height: 30,
-    textAlign: 'center',
-    lineHeight: 30,
-    borderRadius: 15,
-    overflow: 'hidden'
   },
+
+  // 🔽 STYLES DU MENU DROPDOWN
   modalBackground: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.2)",
+    backgroundColor: "rgba(0,0,0,0.1)",
     justifyContent: "flex-start",
     alignItems: "flex-end",
     paddingTop: Platform.OS === 'ios' ? 70 : 60,
@@ -191,17 +215,17 @@ const styles = StyleSheet.create({
   dropdownMenu: {
     backgroundColor: "#fff",
     borderRadius: 15,
-    width: 220,
+    width: 200,
     paddingVertical: 8,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 15,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
     elevation: 10
   },
-  menuItem: { paddingVertical: 14, paddingHorizontal: 20 },
-  menuItemPressed: { backgroundColor: "#f0f0f0" },
-  menuItemText: { fontSize: 16, color: "#333", fontWeight: '500' },
+  menuItem: { paddingVertical: 12, paddingHorizontal: 20 },
+  menuItemPressed: { backgroundColor: "#f8f8f8" },
+  menuItemText: { fontSize: 15, color: "#333", fontWeight: '500' },
   logoutItem: { borderTopWidth: 1, borderTopColor: '#eee', marginTop: 5 },
   logoutText: { color: "#E74C3C", fontWeight: 'bold' }
 });
