@@ -23,7 +23,6 @@ import Chat from "./src/pages/Chat";
 import Tasks from "./src/pages/Job/Tasks";
 import Taskshistory from "./src/pages/Job/Taskshistory";
 import Profile from "./src/pages/Profile";
-import urlBase64ToUint8Array from "./src/services/vapidUtils";
 import MyTasksFocus from "./src/pages/Job/MyTasksFocus";
 import api from './src/services/api'; 
 
