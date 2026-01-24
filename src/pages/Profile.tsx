@@ -78,8 +78,7 @@ export default function Profile() {
       type: `image/${fileType === 'jpg' ? 'jpeg' : fileType}`, // Gestion du jpeg
     } as any);
 
-    const response = await api.post(`/users/upload-avatar/${user._id}`, formData, {
-    
+    const response = await api.post('/users/upload-avatar', formData, {
       // Très important pour axios avec FormData
       transformRequest: (data) => data, 
     });
