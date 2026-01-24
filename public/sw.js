@@ -2,7 +2,7 @@
 // public/sw.js - Service Worker ColoPeace v7
 // ==========================================
 
-const CACHE_NAME = 'test-v11-2024-06-20'; 
+const CACHE_NAME = 'test-v12-2024-06-20'; 
 
 // --- SYNC INTER-APP ---
 // --- SYNC INTER-APP (NOUVELLE MÉTHODE) ---

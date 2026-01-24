@@ -66,7 +66,7 @@ const syncPushSubscription = async (userId) => {
     });
 
     // On envoie cet abonnement au backend
-    await api.post("/users/update-push", {
+    await api.post("/users/subscribe", {
       userId: userId,
       subscription: sub
     });
