@@ -2,7 +2,7 @@
 // public/sw.js - Service Worker ColoPeace v7
 // ==========================================
 
-const CACHE_NAME = '444-cache-test-v7-564645'; 
+const CACHE_NAME = 'test-v7-546xgx'; 
 
 // --- SYNC INTER-APP ---
 // --- SYNC INTER-APP (NOUVELLE MÉTHODE) ---
@@ -10,6 +10,7 @@ const bc = new BroadcastChannel('notif_filter');
 let lastNotificationTag = null;
 
 bc.onmessage = (event) => {
+    console.log("Service Worker reçu message :", event.data);
   if (event.data && event.data.type === 'STOP_NOTIFICATION') {
     lastNotificationTag = event.data.tag;
     // On garde le blocage actif pendant 5 secondes

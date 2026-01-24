@@ -8,7 +8,6 @@ import { useNavigation } from "@react-navigation/native";
 import * as ImagePicker from 'expo-image-picker';
 import { UserContext } from "../../App";
 import api from "../services/api";
-import * as Async from "@react-native-async-storage/async-storage";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get("window");
@@ -22,17 +21,24 @@ export default function Profile() {
 
   const userInitials = user?.name ? user.name.substring(0, 2).toUpperCase() : "??";
 
-  // --- RENDU DE L'IMAGE AVEC SECURITE ---
+  // --- RENDU DE L'IMAGE AVEC SÉCURITÉ ---
   const renderAvatar = () => {
     if (loading) {
       return <View style={styles.avatarPlaceholder}><ActivityIndicator color="#fff" /></View>;
     }
 
     if (user?.avatarUrl) {
-      // Nettoyage de l'URL pour forcer le HTTPS et l'optimisation Cloudinary
+      // Nettoyage et optimisation Cloudinary
       const cleanUrl = user.avatarUrl.replace("http://", "https://")
                                      .replace('/upload/', '/upload/w_400,h_400,c_fill,g_face,q_auto/');
-      return <Image source={{ uri: cleanUrl }} style={styles.avatar} />;
+      
+      return (
+        <Image 
+          key={cleanUrl} // 💡 FORCE LE RE-RENDU si l'URL change (timestamp inclus)
+          source={{ uri: cleanUrl }} 
+          style={styles.avatar} 
+        />
+      );
     }
 
     return (
@@ -42,15 +48,15 @@ export default function Profile() {
     );
   };
 
-  // --- SELECTION DE L'IMAGE ---
+  // --- SÉLECTION DE L'IMAGE ---
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      return Alert.alert("Permission requise", "Veuillez autoriser l'accès à vos photos dans les paramètres.");
+      return Alert.alert("Permission requise", "Veuillez autoriser l'accès à vos photos.");
     }
 
     let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'], // Correction du Warning Deprecated
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.7,
@@ -61,43 +67,50 @@ export default function Profile() {
     }
   };
 
-  // --- ENVOI AU SERVEUR (METHODE FETCH POUR EVITER ERREUR 400) ---
-const uploadToServer = async (uri: string) => {
-  setLoading(true);
-  try {
-    const formData = new FormData();
+  // --- ENVOI AU SERVEUR ---
+  const uploadToServer = async (uri: string) => {
+    setLoading(true);
+    try {
+      const formData = new FormData();
 
-    if (Platform.OS === 'web') {
-      // Sur Web, on doit transformer l'URI en Blob/File réel
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      formData.append('avatar', blob, 'avatar.jpg');
-    } else {
-      // Sur Mobile
-      const uriParts = uri.split('.');
-      const fileType = uriParts[uriParts.length - 1];
-      formData.append('avatar', {
-        uri: Platform.OS === 'ios' ? uri.replace('file://', '') : uri,
-        name: `avatar.${fileType}`,
-        type: `image/${fileType === 'jpg' ? 'jpeg' : fileType}`,
-      } as any);
+      if (Platform.OS === 'web') {
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        formData.append('avatar', blob, 'avatar.jpg');
+      } else {
+        const uriParts = uri.split('.');
+        const fileType = uriParts[uriParts.length - 1];
+        formData.append('avatar', {
+          uri: Platform.OS === 'ios' ? uri.replace('file://', '') : uri,
+          name: `avatar.${fileType}`,
+          type: `image/${fileType === 'jpg' ? 'jpeg' : fileType}`,
+        } as any);
+      }
+
+      const response = await api.post(`/users/upload-avatar/${user._id}`, formData, {
+        transformRequest: (data) => data,
+      });
+
+      if (response.data && response.data.avatarUrl) {
+        // 💡 CACHE BUSTING : On ajoute un timestamp pour forcer le rafraîchissement visuel
+        const refreshedUrl = `${response.data.avatarUrl}${response.data.avatarUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`;
+        
+        const updatedUser = { ...user, avatarUrl: refreshedUrl };
+        
+        // Mise à jour du stockage et du contexte
+        await AsyncStorage.setItem("@colopeace_user", JSON.stringify(updatedUser));
+        setUser(updatedUser);
+
+        setModalVisible(false);
+        Alert.alert("Succès", "Photo mise à jour !");
+      }
+    } catch (err: any) {
+      console.error("Erreur détaillée:", err.response?.data || err.message);
+      Alert.alert("Erreur", "Impossible de synchroniser l'image.");
+    } finally {
+      setLoading(false);
     }
-
-    // --- ATTENTION AUX BACKTICKS ICI ` ---
-    const response = await api.post(`/users/upload-avatar/${user._id}`, formData, {
-      transformRequest: (data) => data, // Garder ça pour Axios
-    });
-
-    if (response.data && response.data.avatarUrl) {
-       // ... (le reste de ton code de sauvegarde AsyncStorage/setUser est bon)
-       Alert.alert("Succès", "Photo enregistrée !");
-    }
-  } catch (err) {
-    console.error("Erreur détaillée:", err.response?.data || err.message);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const profileOptions = [
     { id: 1, title: "Mes informations", icon: "person-outline", route: "EditProfile", color: "#4A90E2" },
@@ -110,7 +123,6 @@ const uploadToServer = async (uri: string) => {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         
-        {/* HEADER PROFIL */}
         <View style={styles.profileHeader}>
           <View style={styles.avatarContainer}>
             {renderAvatar()}
@@ -152,7 +164,6 @@ const uploadToServer = async (uri: string) => {
           </TouchableOpacity>
         </Modal>
 
-        {/* MENU OPTIONS */}
         <View style={styles.menuContainer}>
           {profileOptions.map((option) => (
             <TouchableOpacity 

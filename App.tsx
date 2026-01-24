@@ -101,6 +101,7 @@ function RootNavigation() {
       const socket = getSocket();
       socket.emit("userOnline", userId);
       
+
       const userChannel = `notification_${userId}`;
       socket.on(userChannel, triggerNotification);
       socket.on("notification_global", triggerNotification);
@@ -115,6 +116,7 @@ function RootNavigation() {
   const triggerNotification = (data: any) => {
     // 1. On prévient le Service Worker de NE PAS afficher cette notification
       if (Platform.OS === 'web') {
+        console.log("Blocking Push for tag:", data.conversationId);
     // On crée un canal de communication instantané
     const bc = new BroadcastChannel('notif_filter');
     bc.postMessage({ 
