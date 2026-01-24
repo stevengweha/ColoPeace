@@ -175,18 +175,27 @@ export function TaskDetailView({ task, currentUserId, onBack, onSuccess }: { tas
     setSubmitting(true);
     try {
       const formData = new FormData();
-      const fileName = image.split('/').pop() || 'proof.jpg';
 
-      formData.append('proofImage', {
-        uri: Platform.OS === 'ios' ? image.replace('file://', '') : image,
-        type: 'image/jpeg',
-        name: fileName,
-      } as any);
+      if (Platform.OS === 'web') {
+        // ✅ LOGIQUE WEB : On convertit l'URI (blob:...) en vrai Blob binaire
+        const response = await fetch(image);
+        const blob = await response.blob();
+        formData.append('proofImage', blob, 'proof.jpg');
+      } else {
+        // ✅ LOGIQUE MOBILE : Format standard React Native
+        const fileName = image.split('/').pop() || 'proof.jpg';
+        formData.append('proofImage', {
+          uri: Platform.OS === 'ios' ? image.replace('file://', '') : image,
+          type: 'image/jpeg',
+          name: fileName,
+        } as any);
+      }
 
       formData.append('note', note);
 
+      // On envoie avec les headers appropriés
       const res = await api.put(`/tasks/complete/${task._id}`, formData, {
-        transformRequest: (data) => data,
+    
       });
 
       const scoreGagne = res.data.task.score;
@@ -195,7 +204,7 @@ export function TaskDetailView({ task, currentUserId, onBack, onSuccess }: { tas
       ]);
 
     } catch (e: any) {
-      console.error("Erreur validation:", e.response?.data || e.message);
+      console.error("Erreur validation détaillée:", e.response?.data || e.message);
       Alert.alert("Erreur", e.response?.data?.error || "Impossible de valider.");
     } finally {
       setSubmitting(false);
