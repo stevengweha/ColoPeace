@@ -63,45 +63,46 @@ export default function Profile() {
 
   // --- ENVOI AU SERVEUR (METHODE FETCH POUR EVITER ERREUR 400) ---
  const uploadToServer = async (uri: string) => {
-    setLoading(true);
-    setModalVisible(false);
+  setLoading(true);
+  try {
+    const formData = new FormData();
+    
+    // Extraction propre du nom et de l'extension
+    const uriParts = uri.split('.');
+    const fileType = uriParts[uriParts.length - 1];
+    const fileName = `avatar.${fileType}`;
 
-    try {
-      const formData = new FormData();
-      const fileName = uri.split('/').pop() || 'avatar.jpg';
+    formData.append('avatar', {
+      uri: Platform.OS === 'ios' ? uri.replace('file://', '') : uri,
+      name: fileName,
+      type: `image/${fileType === 'jpg' ? 'jpeg' : fileType}`, // Gestion du jpeg
+    } as any);
+
+    const response = await api.post(`/users/upload-avatar/${user._id}`, formData, {
+    
+      // Très important pour axios avec FormData
+      transformRequest: (data) => data, 
+    });
+
+    if (response.data && response.data.avatarUrl) {
+      // 1. Mise à jour de l'objet utilisateur
+      const updatedUser = { ...user, avatarUrl: response.data.avatarUrl };
       
-      formData.append('avatar', {
-        uri: Platform.OS === 'ios' ? uri.replace('file://', '') : uri,
-        type: 'image/jpeg',
-        name: fileName,
-      } as any);
+      // 2. Mise à jour du stockage local AVANT le context
+      await AsyncStorage.setItem("@colopeace_user", JSON.stringify(updatedUser));
+      
+      // 3. Mise à jour du context global
+      setUser(updatedUser);
 
-      // On utilise l'instance API sans headers JSON globaux
-      const response = await api.post(`/api/users/upload-avatar/${user._id}`, formData, {
-        transformRequest: (data) => data, 
-      });
-
-      if (response.data && response.data.avatarUrl) {
-        const updatedUserData = { 
-          ...user, 
-          avatarUrl: response.data.avatarUrl 
-        };
-
-        // MISE À JOUR IMMÉDIATE DU CONTEXTE (IMAGE CHANGE À L'ÉCRAN)
-        setUser(updatedUserData);
-
-        // SAUVEGARDE LOCALE CORRIGÉE
-        await AsyncStorage.setItem("@colopeace_user", JSON.stringify(updatedUserData));
-
-        Alert.alert("Succès", "Ta photo de profil a été mise à jour !");
-      }
-    } catch (err: any) {
-      console.log("Erreur détaillée:", err.response?.data || err.message);
-      Alert.alert("Erreur", "Impossible d'enregistrer la photo.");
-    } finally {
-      setLoading(false);
+      Alert.alert("Succès", "Photo enregistrée en base de données !");
     }
-  };
+  } catch (err) {
+    console.error("Erreur Upload Front:", err.response?.data || err.message);
+    Alert.alert("Erreur", "La synchronisation avec la base de données a échoué.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const profileOptions = [
     { id: 1, title: "Mes informations", icon: "person-outline", route: "EditProfile", color: "#4A90E2" },
