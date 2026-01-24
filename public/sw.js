@@ -1,107 +1,123 @@
 // ==========================================
-// public/sw.js - Service Worker ColoPeace v7
+// public/sw.js - Service Worker ColoPeace v12-21
 // ==========================================
 
-const CACHE_NAME = '-v12-20'; 
+const CACHE_NAME = 'colopeace-cache-v12-21'; 
 
-// --- SYNC INTER-APP ---
-// --- SYNC INTER-APP (NOUVELLE MÉTHODE) ---
-const bc = new BroadcastChannel('notif_filter');
+// --- SYNC INTER-APP (SÉCURISÉ) ---
 let lastNotificationTag = null;
+try {
+  const bc = new BroadcastChannel('notif_filter');
+  bc.onmessage = (event) => {
+    if (event.data && event.data.type === 'STOP_NOTIFICATION') {
+      lastNotificationTag = String(event.data.tag);
+      // Nettoyage automatique après 5s
+      setTimeout(() => { lastNotificationTag = null; }, 5000);
+    }
+  };
+} catch (e) {
+  console.log("BroadcastChannel non supporté sur ce navigateur.");
+}
 
-bc.onmessage = (event) => {
-  if (event.data && event.data.type === 'STOP_NOTIFICATION') {
-    // On force en String pour éviter les soucis de type (ObjectId vs String)
-    lastNotificationTag = String(event.data.tag);
-    console.log("✅ SW : Tag enregistré pour blocage ->", lastNotificationTag);
-    
-    // On garde le blocage 5s
-    setTimeout(() => { 
-      lastNotificationTag = null; 
-      console.log("ℹ️ SW : Blocage expiré pour le tag");
-    }, 5000);
-  }
-};
-
-// 1. GESTION DES FICHIERS (FETCH)
+// 1. GESTION DES FICHIERS (FETCH) - Stale-While-Revalidate
 self.addEventListener('fetch', (event) => {
+  // Ignorer les appels API et Sockets
   if (event.request.url.includes('/api/') || event.request.url.includes('socket.io')) return;
+
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request).then((fetchRes) => {
-        return caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, fetchRes.clone());
-          return fetchRes;
-        });
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.match(event.request).then((cachedResponse) => {
+        // On tente toujours de mettre à jour le cache depuis le réseau
+        const fetchPromise = fetch(event.request)
+          .then((networkResponse) => {
+            // On ne met en cache que les réponses valides (200)
+            if (networkResponse && networkResponse.status === 200) {
+              cache.put(event.request, networkResponse.clone());
+            }
+            return networkResponse;
+          })
+          .catch(() => {
+            // Si réseau HS, on espère avoir le cache
+            return cachedResponse;
+          });
+
+        // Retourne le cache immédiatement, sinon attend le réseau
+        return cachedResponse || fetchPromise;
       });
     })
   );
 });
 
 // 2. INSTALLATION & ACTIVATION
-self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(
-      keys.map((key) => { if (key !== CACHE_NAME) return caches.delete(key); })
-    ))
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys.map((key) => {
+          if (key !== CACHE_NAME) {
+            console.log("🗑️ Ancien cache supprimé :", key);
+            return caches.delete(key);
+          }
+        })
+      );
+    }).then(() => self.clients.claim())
   );
-  event.waitUntil(clients.claim());
 });
 
 // 3. ÉCOUTE DES NOTIFICATIONS PUSH
 self.addEventListener('push', (event) => {
-  console.log("📥 Push reçu à l'instant !");
-  
   let data = {};
-  if (event.data) {
-    try {
-      data = event.data.json();
-    } catch (e) {
-      console.warn("⚠️ Payload non-JSON reçu:", event.data.text());
-      data = { title: "ColoPeace", body: event.data.text() };
-    }
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = { title: "ColoPeace", body: event.data.text() };
   }
 
   const pushTag = data.conversationId ? String(data.conversationId) : 'chat-notif';
 
+  const promiseChain = self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    .then((windowClients) => {
+      const isAppActive = windowClients.some(client => client.visibilityState === 'visible');
+      const isBlocked = (lastNotificationTag !== null && String(lastNotificationTag) === pushTag);
 
-  const promiseChain = clients.matchAll({ type: 'window', includeUncontrolled: true })
-  .then((windowClients) => {
-    const isAppActive = windowClients.some(client => client.visibilityState === 'visible');
-    const isBlocked = (lastNotificationTag !== null && String(lastNotificationTag) === pushTag);
+      // Ne pas afficher si l'app est active ou bloquée par BroadcastChannel
+      if (isAppActive || isBlocked) return;
 
-    console.log(`🧐 Analyse : Tag=${pushTag} | Bloqué=${isBlocked} | Active=${isAppActive}`);
-
-    // SI L'APP EST OUVERTE OU DÉJÀ NOTIFIÉE PAR SOCKET -> ON SORT
-    if (isAppActive || isBlocked) {
-      return Promise.resolve(); 
-    }
-
-    // SINON ON FORCE L'AFFICHAGE
-    return self.registration.showNotification(data.title || "ColoPeace 💬", {
-      body: data.body || "Nouveau message reçu",
-      tag: pushTag,
-      renotify: true,
-      data: { url: data.url || '/' },
-      icon: '/logo.png',
-      badge: '/logo.png',
-      vibrate: [100, 50, 100]
+      return self.registration.showNotification(data.title || "ColoPeace 💬", {
+        body: data.body || "Nouveau message reçu",
+        tag: pushTag,
+        renotify: true,
+        data: { url: data.url || '/' },
+        icon: '/logo.png',
+        badge: '/logo.png',
+        vibrate: [100, 50, 100]
+      });
     });
-  });
 
-event.waitUntil(promiseChain);
+  event.waitUntil(promiseChain);
+});
 
-// 4. CLIC
+// 4. CLIC SUR NOTIFICATION
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const targetUrl = event.notification.data.url;
+
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      const url = event.notification.data.url;
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // Si un onglet est déjà ouvert sur l'URL, on lui donne le focus
       for (let client of windowClients) {
-        if (client.url.includes(url) && 'focus' in client) return client.focus();
+        if (client.url.includes(targetUrl) && 'focus' in client) {
+          return client.focus();
+        }
       }
-      if (clients.openWindow) return clients.openWindow(url);
+      // Sinon on ouvre une nouvelle fenêtre
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
     })
   );
 });
