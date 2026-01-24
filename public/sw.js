@@ -2,18 +2,20 @@
 // public/sw.js - Service Worker ColoPeace v7
 // ==========================================
 
-const CACHE_NAME = '444-cache-satable-test-v7-564645'; 
+const CACHE_NAME = '444-cache-test-v7-564645'; 
 
 // --- SYNC INTER-APP ---
+// --- SYNC INTER-APP (NOUVELLE MÉTHODE) ---
+const bc = new BroadcastChannel('notif_filter');
 let lastNotificationTag = null;
 
-self.addEventListener('message', (event) => {
+bc.onmessage = (event) => {
   if (event.data && event.data.type === 'STOP_NOTIFICATION') {
     lastNotificationTag = event.data.tag;
-    // On garde le blocage actif pendant 5 secondes pour être large
+    // On garde le blocage actif pendant 5 secondes
     setTimeout(() => { lastNotificationTag = null; }, 5000);
   }
-});
+};
 
 // 1. GESTION DES FICHIERS (FETCH)
 self.addEventListener('fetch', (event) => {

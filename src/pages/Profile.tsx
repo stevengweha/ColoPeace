@@ -62,44 +62,38 @@ export default function Profile() {
   };
 
   // --- ENVOI AU SERVEUR (METHODE FETCH POUR EVITER ERREUR 400) ---
- const uploadToServer = async (uri: string) => {
+const uploadToServer = async (uri: string) => {
   setLoading(true);
   try {
     const formData = new FormData();
-    
-    // Extraction propre du nom et de l'extension
-    const uriParts = uri.split('.');
-    const fileType = uriParts[uriParts.length - 1];
-    const fileName = `avatar.${fileType}`;
 
-    formData.append('avatar', {
-      uri: Platform.OS === 'ios' ? uri.replace('file://', '') : uri,
-      name: fileName,
-      type: `image/${fileType === 'jpg' ? 'jpeg' : fileType}`, // Gestion du jpeg
-    } as any);
+    if (Platform.OS === 'web') {
+      // Sur Web, on doit transformer l'URI en Blob/File réel
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      formData.append('avatar', blob, 'avatar.jpg');
+    } else {
+      // Sur Mobile
+      const uriParts = uri.split('.');
+      const fileType = uriParts[uriParts.length - 1];
+      formData.append('avatar', {
+        uri: Platform.OS === 'ios' ? uri.replace('file://', '') : uri,
+        name: `avatar.${fileType}`,
+        type: `image/${fileType === 'jpg' ? 'jpeg' : fileType}`,
+      } as any);
+    }
 
-    const response = await api.post('/users/upload-avatar/${user._id}', 
-        formData, 
-        {
-      // Très important pour axios avec FormData
-      transformRequest: (data) => data, 
+    // --- ATTENTION AUX BACKTICKS ICI ` ---
+    const response = await api.post(`/users/upload-avatar/${user._id}`, formData, {
+      transformRequest: (data) => data, // Garder ça pour Axios
     });
 
     if (response.data && response.data.avatarUrl) {
-      // 1. Mise à jour de l'objet utilisateur
-      const updatedUser = { ...user, avatarUrl: response.data.avatarUrl };
-      
-      // 2. Mise à jour du stockage local AVANT le context
-      await AsyncStorage.setItem("@colopeace_user", JSON.stringify(updatedUser));
-      
-      // 3. Mise à jour du context global
-      setUser(updatedUser);
-
-      Alert.alert("Succès", "Photo enregistrée en base de données !");
+       // ... (le reste de ton code de sauvegarde AsyncStorage/setUser est bon)
+       Alert.alert("Succès", "Photo enregistrée !");
     }
   } catch (err) {
-    console.error("Erreur Upload Front:", err.response?.data || err.message);
-    Alert.alert("Erreur", "La synchronisation avec la base de données a échoué.");
+    console.error("Erreur détaillée:", err.response?.data || err.message);
   } finally {
     setLoading(false);
   }

@@ -114,12 +114,17 @@ function RootNavigation() {
 
   const triggerNotification = (data: any) => {
     // 1. On prévient le Service Worker de NE PAS afficher cette notification
-      if (Platform.OS === 'web' && 'serviceWorker' in navigator) {
-        navigator.serviceWorker.controller?.postMessage({
-          type: 'STOP_NOTIFICATION',
-          tag: data.conversationId?.toString() || 'chat-notif'
-        });
-      }
+      if (Platform.OS === 'web') {
+    // On crée un canal de communication instantané
+    const bc = new BroadcastChannel('notif_filter');
+    bc.postMessage({ 
+      type: 'STOP_NOTIFICATION', 
+      tag: data.conversationId?.toString() 
+    });
+    // On ferme le canal localement après envoi pour libérer la mémoire
+    setTimeout(() => bc.close(), 1000);
+  }
+    // 2. On affiche la notification dans l'app via FlashMessage
     try { Vibration.vibrate([0, 150, 100, 150]); } catch (e) {}
     showMessage({
       message: data.title || "Message",
