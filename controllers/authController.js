@@ -7,24 +7,34 @@ const jwt = require('jsonwebtoken');
 // ===================
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, avatarUrl } = req.body;
+    const { name, email, password, avatarUrl, inviteCode } = req.body;
 
+    // --- VÉRIFICATION DU CODE ---
+    const validCode = await AccessCode.findOne({ 
+      code: inviteCode, 
+      email: email, // Sécurité : le code doit correspondre au mail
+      isActive: true,
+      expiresAt: { $gt: new Date() } 
+    });
+
+    if (!validCode) {
+      return res.status(403).json({ message: "Code invalide, expiré ou mauvais email." });
+    }
+
+    // --- LOGIQUE D'INSCRIPTION CLASSIQUE ---
     const existingUser = await User.findOne({ email });
     if (existingUser) return res.status(400).json({ message: 'Email déjà utilisé.' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    const user = new User({
-      name,
-      email,
-      password: hashedPassword,
-      avatarUrl
-    });
-
+    const user = new User({ name, email, password: hashedPassword, avatarUrl });
     await user.save();
 
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '24h' });
+    // Marquer le code comme utilisé
+    validCode.isActive = false;
+    validCode.usedBy = user._id;
+    await validCode.save();
 
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '24h' });
     res.status(201).json({ message: 'Utilisateur créé.', token, user });
 
   } catch (err) {
@@ -116,3 +126,35 @@ exports.clerkLogin = async (req, res) => {
 };
 
 // =============================
+const crypto = require('crypto');
+const AccessCode = require('../models/AccessCode');
+const { sendInviteCode } = require('../services/emailService'); // Assure-toi de l'ajouter dans ton emailService
+
+exports.generateAndSendCode = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "L'email est requis" });
+
+    // 1. Générer le code
+    const code = crypto.randomBytes(3).toString('hex').toUpperCase();
+
+    // 2. Définir l'expiration
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24);
+
+    // 3. Enregistrer en base
+    await AccessCode.create({
+      code,
+      email,
+      expiresAt
+    });
+
+    // 4. Envoyer l'email (AVEC LES 3 ARGUMENTS)
+    // Ici, on ajoute "Un futur coloc" comme nom intermédiaire
+    await sendInviteCode(email, code); 
+
+    res.json({ message: `Code envoyé avec succès à ${email}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};

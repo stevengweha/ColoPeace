@@ -52,3 +52,24 @@ exports.sendTaskReminder = (recipientEmail, userName, taskTitle) => {
   };
   return transporter.sendMail(mailOptions);
 };
+
+// mailler invitation à rejoindre la coloc avec lien d'inscription et code coloc
+exports.sendInviteCode = (recipientEmail, code) => {
+  const mailOptions = {
+    from: '"ColoPeace 🏠"<ton-email@gmail.com>',
+    to: recipientEmail,
+    subject: `🏠 Invitation à rejoindre une coloc avec ColoPeace`,
+    html: `
+        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+            <h2 style="color: #205C3B;">Salut !</h2>
+            <p>tu as été invité à rejoindre la coloc  ColoPeace.</p>
+            <p>Utilise le code suivant pour t'inscrire et rejoindre la coloc : <strong style="font-size: 18px; color: #e67e22;">${code}</strong></p>
+            <br/>
+            <a href="https://ton-app-vercel.app/" style="background-color: #205C3B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">S'inscrire et rejoindre la coloc</a>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+            <small style="color: #888;">ColoPeace - Organisons la vie à la coloc sans stress.</small>
+        </div>
+    `
+  };
+  return transporter.sendMail(mailOptions);
+};

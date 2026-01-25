@@ -231,8 +231,56 @@ app.post('/test-email', async (req, res) => {
   }
 });
 
-// gestion des notificatioms
+const AdminJS = require('adminjs');
+const AdminJSExpress = require('@adminjs/express');
+const AdminJSMongoose = require('@adminjs/mongoose');
+const session = require('express-session');
 
+AdminJS.registerAdapter(AdminJSMongoose);
+
+const startAdmin = async () => {
+  // On s'assure que les modèles sont bien chargés avant de lancer AdminJS
+  const User = require('./models/User');
+  const Task = require('./models/Task');
+  const Conversation = require('./models/Conversation');
+  const Message = require('./models/Message');
+  const AccessCode = require('./models/AccessCode');
+
+  const adminOptions = {
+    resources: [
+      { resource: User },
+      { resource: Task },
+      { resource: Conversation },
+      { resource: Message },
+      { resource: AccessCode }
+    ],
+    rootPath: '/admin',
+    branding: { companyName: 'ColoPeace Admin' }
+  };
+
+  const admin = new AdminJS(adminOptions);
+
+  // Construction du routeur authentifié
+  const adminRouter = AdminJSExpress.buildAuthenticatedRouter(admin, {
+    authenticate: async (email, password) => {
+      if (email === process.env.ADMINUSER && password === process.env.ADMINPASSWORD) {
+        return { email };
+      }
+      return null;
+    },
+    cookiePassword: 'un-password-tres-long-pour-la-securite-des-cookies',
+  }, null, {
+    resave: false,
+    saveUninitialized: true,
+    secret: 'secret-session-colopeace',
+    cookie: { httpOnly: true, secure: false } // mettre secure: true en production (HTTPS)
+  });
+
+  app.use(admin.options.rootPath, adminRouter);
+  console.log(`🚀 AdminJS configuré sur http://localhost:5001/admin`);
+};
+
+startAdmin();
 
 // Lancement du serveur
 const PORT = 5001;
