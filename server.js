@@ -46,9 +46,7 @@ const taskController = require('./controllers/TaskController');
 const conversationController = require('./controllers/conversationController');
 const messageController = require('./controllers/messageController');
 
-// ==================
-// Définition des routes
-// ============
+
 
 // Injection de Socket.io dans les contrôleurs
 messageController.setSocketIo(io);
@@ -92,6 +90,7 @@ app.post('/api/messages/mark-read', messageController.markMessagesAsRead);
 
 // route notification subscription
 app.post('/api/users/subscribe', userController.savePushSubscription);
+
 
 // ==================
 // Logique Socket.io (server.js)
@@ -158,28 +157,65 @@ io.on('connection', (socket) => {
 // ==================
 const Task = require('./models/Task');
 const { sendTaskReminder } = require('./services/emailService');
+const { sendNotification } = require('./services/notification');
 
 // Rappel quotidien à 08:00
 cron.schedule('0 8 * * *', async () => {
-  console.log("⏰ Exécution des rappels email...");
-  const today = new Date();
-  today.setHours(0,0,0,0);
+  console.log("⏰ Lancement de la routine matinale : Rappels Email + Push...");
   
-  const tasksDueToday = await Task.find({ 
-    dueDate: { $gte: today, $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000) },
-    status: 'pending' 
-  }).populate('assignedTo');
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // On cherche les tâches qui expirent dans les prochaines 24h
+    const tasksDueToday = await Task.find({ 
+      dueDate: { 
+        $gte: today, 
+        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000) 
+      },
+      status: 'pending' 
+    }).populate('assignedTo');
 
-  tasksDueToday.forEach(task => {
-    if (task.assignedTo && task.assignedTo.email) {
-      sendTaskReminder(task.assignedTo.email, task.assignedTo.name, task.name);
+    if (tasksDueToday.length === 0) {
+      return console.log("✅ Aucune tâche à rappeler aujourd'hui.");
     }
-  });
+
+    // Utilisation d'une boucle for...of pour gérer l'asynchrone proprement
+    for (const task of tasksDueToday) {
+      const user = task.assignedTo;
+      
+      if (user) {
+        // 1. Envoi du Mail via ton service
+        if (user.email) {
+          sendTaskReminder(user.email, user.name, task.name)
+            .then(() => console.log(`📧 Mail envoyé à ${user.email}`))
+            .catch(err => console.error(`❌ Erreur Mail (${user.email}):`, err));
+        }
+
+        // 2. Envoi du Push via ton service Web-Push
+        sendNotification(user._id, {
+          title: "⏰ Rappel ColoPeace",
+          body: `Salut ${user.name}, n'oublie pas ta tâche : ${task.name}`,
+          type: "REMINDER",
+          url: "/tasks"
+        });
+      }
+    }
+  } catch (error) {
+    console.error("❌ Erreur critique dans le Cron Job :", error);
+  }
 });
 
+
+// ==================
 // Route test
+// ==================
 app.get('/', (req, res) => res.send('✅ ColoPeace API is running'));
 
+
+// ==================
+// Route de debug Cloudinary (à supprimer après test)
+// ==================
 app.get('/api/debug-cloudinary', async (req, res) => {
   const cloudinary = require('cloudinary').v2;
   // On injecte les clés DIRECTEMENT ici
@@ -205,6 +241,7 @@ app.get('/api/debug-cloudinary', async (req, res) => {
 // ==================
 // Route temporaire de test (à supprimer après)
 // ✅ Route de test dynamique via Postman
+// ==================
 app.post('/test-email', async (req, res) => {
   const { sendTaskReminder } = require('./services/emailService');
   
@@ -231,6 +268,9 @@ app.post('/test-email', async (req, res) => {
   }
 });
 
+// ==================
+// AdminJS Setup
+// ==================
 const AdminJS = require('adminjs');
 const AdminJSExpress = require('@adminjs/express');
 const AdminJSMongoose = require('@adminjs/mongoose');
@@ -282,7 +322,9 @@ const startAdmin = async () => {
 
 startAdmin();
 
+// ==================
 // Lancement du serveur
+// ==================
 const PORT = 5001;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`
