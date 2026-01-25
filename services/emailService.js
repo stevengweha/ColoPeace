@@ -1,30 +1,52 @@
 const nodemailer = require('nodemailer');
+// TRÈS IMPORTANT : Cette ligne doit être présente pour lire ton fichier .env
+require('dotenv').config(); 
 
-// 1. Configuration du transporteur
+if (!process.env.BREVO_USER || !process.env.BREVO_PASS) {
+  console.error("❌ Les variables d'environnement BREVO_USER ou BREVO_PASS ne sont pas définies.");
+}
+
+
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false, // Obligatoire pour STARTTLS (port 587)
-  requireTLS: true, // Force la connexion sécurisée
+  host: process.env.BREVO_SERVER_SMTP,
+  port: process.env.BREVO_PORT,
+  secure: false,
   auth: {
-    user: process.env.eMAIL_SERVICE_NAME,
-    pass: process.env.eMAIL_SERVICE
+    // On utilise exactement les noms de ton fichier .env
+    user: process.env.BREVO_USER, 
+    pass: process.env.BREVO_PASS
   },
-  connectionTimeout: 10000, // 10 secondes pour se connecter
-  greetingTimeout: 5000,
-  socketTimeout: 15000,
   tls: {
-    // Cette partie est cruciale pour éviter les blocages réseaux des serveurs cloud
-    rejectUnauthorized: false,
-    minVersion: 'TLSv1.2'
+    rejectUnauthorized: false
   }
 });
 
-// 2. Fonction d'envoi (Nommée "sendTaskReminder" pour matcher ton server.js)
-// mailler de nouvelle tâche assignée
+// Fonctions d'envoi
+exports.sendInviteCode = (recipientEmail, code) => {
+  const mailOptions = {
+    from: `"ColoPeace 🏠" <jhonsgustavo@gmail.com>`,
+    to: recipientEmail,
+    subject: `🏠 Invitation à rejoindre une coloc avec ColoPeace`,
+    html: `
+        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+            <h2 style="color: #205C3B;">Salut !</h2>
+            <p>tu as été invité à rejoindre la coloc  ColoPeace.</p>
+            <p>Utilise le code suivant pour t'inscrire et rejoindre la coloc : <strong style="font-size: 18px; color: #e67e22;">${code}</strong></p>
+            <br/>
+            <a href="https://ton-app-vercel.app/" style="background-color: #205C3B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">S'inscrire et rejoindre la coloc</a>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+            <small style="color: #888;">ColoPeace - Organisons la vie à la coloc sans stress.</small>
+        </div>
+    `
+  };
+  return transporter.sendMail(mailOptions);
+};
+
+
+// Mail de nouvelle tâche
 exports.sendTaskNew = (recipientEmail, userName, taskTitle) => {
   const mailOptions = {
-    from: '"ColoPeace 🏠" <ton-email@gmail.com>',
+    from: `"ColoPeace 🏠" <jhonsgustavo@gmail.com>`,
     to: recipientEmail,
     subject: `📋 Nouvelle tâche assignée : ${taskTitle}`, // Objet plus clair
     html: `
@@ -43,10 +65,10 @@ exports.sendTaskNew = (recipientEmail, userName, taskTitle) => {
   return transporter.sendMail(mailOptions);
 };
 
-// mailler de rappel de tâche
+// Mail de rappel
 exports.sendTaskReminder = (recipientEmail, userName, taskTitle) => {
   const mailOptions = {
-    from: '"ColoPeace 🏠"<ton-email@gmail.com>',
+    from: `"ColoPeace 🏠" <jhonsgustavo@gmail.com>`,
     to: recipientEmail,
     subject: `⏰ Rappel de tâche : ${taskTitle}`,
     html: `
@@ -56,27 +78,6 @@ exports.sendTaskReminder = (recipientEmail, userName, taskTitle) => {
             <p>N'oublie pas de prendre une <b>photo de preuve</b> dans l'application une fois la tâche terminée !</p>
             <br/>
             <a href="https://ton-app-vercel.app" style="background-color: #205C3B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Voir mes tâches</a>
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
-            <small style="color: #888;">ColoPeace - Organisons la vie à la coloc sans stress.</small>
-        </div>
-    `
-  };
-  return transporter.sendMail(mailOptions);
-};
-
-// mailler invitation à rejoindre la coloc avec lien d'inscription et code coloc
-exports.sendInviteCode = (recipientEmail, code) => {
-  const mailOptions = {
-    from: '"ColoPeace 🏠"<ton-email@gmail.com>',
-    to: recipientEmail,
-    subject: `🏠 Invitation à rejoindre une coloc avec ColoPeace`,
-    html: `
-        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-            <h2 style="color: #205C3B;">Salut !</h2>
-            <p>tu as été invité à rejoindre la coloc  ColoPeace.</p>
-            <p>Utilise le code suivant pour t'inscrire et rejoindre la coloc : <strong style="font-size: 18px; color: #e67e22;">${code}</strong></p>
-            <br/>
-            <a href="https://ton-app-vercel.app/" style="background-color: #205C3B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">S'inscrire et rejoindre la coloc</a>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
             <small style="color: #888;">ColoPeace - Organisons la vie à la coloc sans stress.</small>
         </div>
