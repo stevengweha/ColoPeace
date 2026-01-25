@@ -130,31 +130,25 @@ const crypto = require('crypto');
 const AccessCode = require('../models/AccessCode');
 const { sendInviteCode } = require('../services/emailService'); // Assure-toi de l'ajouter dans ton emailService
 
-exports.generateAndSendCode = async (req, res) => {
+eexports.generateAndSendCode = async (req, res) => {
   try {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ error: "L'email est requis" });
-
     const code = crypto.randomBytes(3).toString('hex').toUpperCase();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    // 1. On enregistre en priorité dans MongoDB
     await AccessCode.create({ code, email, expiresAt });
 
-    // 2. On lance l'envoi du mail SANS 'await' pour ne pas bloquer la réponse HTTP
-    // OU on utilise un bloc try/catch séparé pour que le mail ne fasse pas crash la route
-    sendInviteCode(email, code).catch(err => 
-      console.error("❌ Erreur d'envoi mail en arrière-plan:", err)
-    );
+    // 🔥 ON AJOUTE DES LOGS ICI POUR VOIR LE RÉSULTAT DANS RENDER
+    sendInviteCode(email, code)
+      .then(() => console.log(`✅ Mail d'invitation envoyé avec succès à ${email}`))
+      .catch(err => console.error(`❌ ÉCHEC envoi mail à ${email}:`, err.message));
 
-    // 3. On répond immédiatement au frontend
     return res.json({ 
       message: `Code généré pour ${email}. L'email est en cours d'envoi.`,
-      debugCode: code // Optionnel : pour tester sans regarder tes mails
+      debugCode: code 
     });
 
   } catch (err) {
-    console.error("🔥 Erreur generateAndSendCode:", err);
     res.status(500).json({ error: "Erreur DB: " + err.message });
   }
 };
