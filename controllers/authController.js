@@ -130,7 +130,7 @@ const crypto = require('crypto');
 const AccessCode = require('../models/AccessCode');
 const { sendInviteCode } = require('../services/emailService'); // Assure-toi de l'ajouter dans ton emailService
 
-eexports.generateAndSendCode = async (req, res) => {
+exports.generateAndSendCode = async (req, res) => {
   try {
     const { email } = req.body;
     const code = crypto.randomBytes(3).toString('hex').toUpperCase();
