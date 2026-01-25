@@ -25,6 +25,7 @@ import Taskshistory from "./src/pages/Job/Taskshistory";
 import Profile from "./src/pages/Profile";
 import MyTasksFocus from "./src/pages/Job/MyTasksFocus";
 import api from './src/services/api'; 
+import AdminDashboard from "./src/pages/AdminDashboard";
 
 // --- 🔐 CONFIGURATION CACHE CLERK ---
 const tokenCache = {
@@ -202,6 +203,7 @@ function RootNavigation() {
 // --- 📂 STACKS ---
 function AuthStack({ setUser }: any) {
   return (
+
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Login">{(props) => <Login onLogin={setUser} {...props} />}</Stack.Screen>
       <Stack.Screen name="Register">{(props) => <Register onRegister={setUser} {...props} />}</Stack.Screen>
@@ -210,8 +212,10 @@ function AuthStack({ setUser }: any) {
 }
 
 function AppStack({ user }: any) {
+    const initialRoute = user?.role === 'admin' ? "AdminDashboard" : "Home";
+
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Home">{(props) => <RootLayout><TasksWeek user={user} {...props} /></RootLayout>}</Stack.Screen>
       <Stack.Screen name="Conversations">{(props) => <RootLayout><Conversations user={user} {...props} /></RootLayout>}</Stack.Screen>
       <Stack.Screen name="Chat" options={SimpleHeader}>{(props) => <Chat user={user} {...props} />}</Stack.Screen>
@@ -220,6 +224,7 @@ function AppStack({ user }: any) {
       <Stack.Screen name="Taskshistory">{(props) => <RootLayout><Taskshistory user={user} {...props} /></RootLayout>}</Stack.Screen>
       <Stack.Screen name="Profile">{(props) => <RootLayout><Profile user={user} {...props} /></RootLayout>}</Stack.Screen>
       <Stack.Screen name="MyTasksFocus">{(props) => <RootLayout><MyTasksFocus user={user} {...props} /></RootLayout>}</Stack.Screen>
+      <Stack.Screen name="AdminDashboard" options={SimpleHeader}>{(props) => <AdminDashboard user={user} {...props} />}</Stack.Screen>
     </Stack.Navigator>
   );
 }

@@ -36,18 +36,19 @@ export default function Register({ onRegister }: { onRegister: (user: any) => vo
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [loading, setLoading] = useState(false);
   const navigation = useNavigation();
 
   const handleRegister = async () => {
     if (loading) return;
-    if (!name || !email || !password) return Alert.alert('Erreur', 'Veuillez remplir tous les champs.');
+    if (!name || !email || !password || !inviteCode) return Alert.alert('Erreur', 'Veuillez remplir tous les champs.');
     
     setLoading(true);
     try {
-      const res = await api.post('/auth/register', { name, email, password });
+      const res = await api.post('/auth/register', { name, email, password, inviteCode });
       const user = res.data.user || res.data;
-      
+
       await AsyncStorage.setItem(
         "@colopeace_user",
         JSON.stringify(user)
@@ -103,6 +104,8 @@ export default function Register({ onRegister }: { onRegister: (user: any) => vo
           />
         </View>
 
+        
+
         {/* CHAMPS D'ENTRÉE : MOT DE PASSE */}
         <View style={styles.inputGroup}>
           <Ionicons name="lock-closed-outline" size={20} color={COLORS.placeholder} style={styles.icon} />
@@ -113,6 +116,19 @@ export default function Register({ onRegister }: { onRegister: (user: any) => vo
             value={password} 
             onChangeText={setPassword} 
             secureTextEntry
+          />
+        </View>
+
+        {/* CODE D'INVITATION (IMPORTANT) */}
+        <View style={[styles.inputGroup, { borderColor: COLORS.secondary, borderWidth: 1 }]}>
+          <Ionicons name="key-outline" size={20} color={COLORS.secondary} style={styles.icon} />
+          <TextInput 
+            style={styles.input} 
+            placeholder="Code d'invitation (Reçu par mail)" 
+            placeholderTextColor={COLORS.placeholder}
+            value={inviteCode} 
+            onChangeText={setInviteCode} 
+            autoCapitalize="characters" // Force les majuscules
           />
         </View>
 
