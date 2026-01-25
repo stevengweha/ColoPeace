@@ -2,10 +2,15 @@ const nodemailer = require('nodemailer');
 
 // 1. Configuration du transporteur
 const transporter = nodemailer.createTransport({
-  service: 'gmail', 
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false, // Doit être false pour le port 587
   auth: {
-    user: process.env.eMAIL_SERVICE_NAME, // Remplace par ton vrai Gmail
-    pass: process.env.eMAIL_SERVICE // Ton code de 16 lettres Google
+    user: process.env.eMAIL_SERVICE_NAME,
+    pass: process.env.eMAIL_SERVICE
+  },
+  tls: {
+    rejectUnauthorized: false // Aide à éviter les erreurs de certificat sur Render
   }
 });
 
