@@ -26,6 +26,9 @@ import Profile from "./src/pages/Profile";
 import MyTasksFocus from "./src/pages/Job/MyTasksFocus";
 import api from './src/services/api'; 
 import AdminDashboard from "./src/pages/AdminDashboard";
+import Caisse from "./src/pages/caisse";
+import Course from "./src/pages/Achat";
+
 
 // --- 🔐 CONFIGURATION CACHE CLERK ---
 const tokenCache = {
@@ -225,6 +228,8 @@ function AppStack({ user }: any) {
       <Stack.Screen name="Profile">{(props) => <RootLayout><Profile user={user} {...props} /></RootLayout>}</Stack.Screen>
       <Stack.Screen name="MyTasksFocus">{(props) => <RootLayout><MyTasksFocus user={user} {...props} /></RootLayout>}</Stack.Screen>
       <Stack.Screen name="AdminDashboard" options={SimpleHeader}>{(props) => <AdminDashboard user={user} {...props} />}</Stack.Screen>
+      <Stack.Screen name="Caisse">{(props) => <RootLayout><Caisse user={user} {...props} /></RootLayout>}</Stack.Screen>
+      <Stack.Screen name="Course">{(props) => <RootLayout><Course user={user} {...props} /></RootLayout>}</Stack.Screen>
     </Stack.Navigator>
   );
 }

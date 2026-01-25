@@ -104,7 +104,7 @@ export default function TasksWeek({ user }: { user: any }) {
     { title: "Mes points", icon: "trophy-outline", value: stats.score, route: "Taskshistory", color: "#6A1B9A" },
     { title: "Colocs", icon: "people-outline", value: "Voir", route: "Users", color: "#00838F" },
     { title: "Caisse", icon: "cash-outline", value: "30€", route: "Caisse", color: "#D4AF37" },
-    { title: "Courses", icon: "cart-outline", value: "!", route: "ListeAchats", color: "#F39C12" }
+    { title: "Courses", icon: "cart-outline", value: "!", route: "Course", color: "#F39C12" }
   ]), [stats, convCount]);
 
   if (loading) return (

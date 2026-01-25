@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useContext, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
+import React, { useEffect, useState, useContext, useCallback,  } from 'react';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native';
 import api from '../services/api';
 import { getSocket } from '../services/socket'; // Utilisation du service central
 import { UserContext } from '../../App';
@@ -77,6 +77,8 @@ export default function UsersList() {
     const itemId = item._id || item.id;
     const isOnline = onlineIds.includes(itemId.toString());
     const isLoading = creatingConv === itemId;
+    //image cloudinary
+    const avatarUrl = item.avatarUrl ? { uri: item.avatarUrl } : null;
 
     return (
       <TouchableOpacity 
@@ -85,9 +87,18 @@ export default function UsersList() {
         activeOpacity={0.7}
       >
         <View style={styles.avatarWrapper}>
-          <View style={[styles.avatar, styles.avatarPlaceholder]}>
-            <Text style={styles.avatarText}>{item.name?.charAt(0).toUpperCase()}</Text>
-          </View>
+          {avatarUrl ? (
+            <Image 
+              source={{ uri: avatarUrl.uri }} 
+              style={styles.avatar} 
+              // Cloudinary peut être lent au premier chargement, on peut ajouter un petit fondu
+              fadeDuration={300} 
+            />
+          ) : (
+            <View style={[styles.avatar, styles.avatarPlaceholder]}>
+              <Text style={styles.avatarText}>{item.name?.charAt(0).toUpperCase()}</Text>
+            </View>
+          )}
           {isOnline && <View style={styles.statusIndicator} />}
         </View>
 
