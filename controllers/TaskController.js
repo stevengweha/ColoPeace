@@ -88,7 +88,7 @@ exports.generateWeeklyTasks = async (req, res) => {
         taskName: task.name,
         weekNumber,
         year,
-        action: "task_assigned",
+        action: "assigned",
         score: POINT_SYSTEM.ASSIGNED
       });
 
