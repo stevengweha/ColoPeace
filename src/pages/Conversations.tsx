@@ -111,7 +111,7 @@ export default function Conversations() {
       <TouchableOpacity
         activeOpacity={0.7}
         style={[styles.card, isUnread && styles.unreadCard]}
-        onPress={() => navigation.navigate('Chat', { id: item._id, title: chatTitle })}
+        onPress={() => navigation.navigate('Chat', { id: item._id, title: chatTitle})}
       >
             <View style={styles.avatarContainer}>
                 {otherParticipant?.avatarUrl ? (

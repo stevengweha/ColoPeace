@@ -13,83 +13,94 @@ export default function Chat() {
   const { user } = useContext(UserContext);
   const navigation = useNavigation();
   const route = useRoute<any>();
-  // On récupère participants en plus pour identifier l'autre utilisateur
-  const { id, title, participants } = route.params; 
+  const { id, title } = route.params; 
   
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState('');
   const [otherIsTyping, setOtherIsTyping] = useState(false);
-  const [isOtherOnline, setIsOtherOnline] = useState(false); // État Online
+  const [isOtherOnline, setIsOtherOnline] = useState(false);
+  const [otherId, setOtherId] = useState<string | null>(null);
+
   const flatListRef = useRef<FlatList>(null);
   const socket = getSocket();
 
   const conversationIdStr = id?._id || id;
   const myId = (user?._id || user?.id)?.toString();
 
+  // 1. CHARGEMENT INITIAL : Historique + Identification de l'autre
+  useEffect(() => {
+    api.get(`/messages/conversation/${conversationIdStr}`).then(r => {
+      setMessages(r.data);
+      // On cherche un message qui n'est pas le nôtre pour choper l'ID de l'autre
+      const msgFromOther = r.data.find((m: any) => 
+        (m.senderId?._id || m.senderId).toString() !== myId
+      );
+      if (msgFromOther) {
+        setOtherId((msgFromOther.senderId?._id || msgFromOther.senderId).toString());
+      }
+    });
+  }, [conversationIdStr]);
+
+  // 2. LOGIQUE SOCKET (Online, Typing, Lecture, Réception)
   useEffect(() => {
     if (!user || !socket) return;
     
-    // 1. Rejoindre la room et marquer comme lu
     socket.emit('joinConversation', conversationIdStr);
     socket.emit('readMessages', { conversationId: conversationIdStr, userId: myId });
+    socket.emit('userOnline', myId); // On force le signalement comme dans UsersList
 
-    // 2. Écouter le statut en ligne global
-    socket.on('userOnlineStatus', (onlineUserIds: string[]) => {
-      const otherId = participants?.find((p: any) => (p?._id || p).toString() !== myId);
+    // --- STATUT EN LIGNE ---
+    const handleOnlineStatus = (onlineUserIds: string[]) => {
       if (otherId) {
-        setIsOtherOnline(onlineUserIds.includes(otherId.toString()));
-      }
-    });
-
-    // 3. Écouter les nouveaux messages
-    const handleReceive = (msg: any) => {
-      const msgConvId = (msg.conversationId?._id || msg.conversationId).toString();
-      if (msgConvId === conversationIdStr.toString()) {
-        setMessages(prev => {
-          if (prev.find(m => m._id === msg._id)) return prev;
-          return [...prev, msg];
-        });
-        socket.emit('readMessages', { conversationId: conversationIdStr, userId: myId });
+        setIsOtherOnline(onlineUserIds.includes(otherId));
       }
     };
 
-    // 4. Écouter les statuts (typing / read)
+    // --- RÉCEPTION MESSAGE ---
+    const handleReceive = (msg: any) => {
+      const msgConvId = (msg.conversationId?._id || msg.conversationId).toString();
+      if (msgConvId === conversationIdStr.toString()) {
+        setMessages(prev => (prev.find(m => m._id === msg._id) ? prev : [...prev, msg]));
+        socket.emit('readMessages', { conversationId: conversationIdStr, userId: myId });
+        
+        // Si on n'avait pas encore l'ID de l'autre (nouveau chat)
+        const sId = (msg.senderId?._id || msg.senderId).toString();
+        if (!otherId && sId !== myId) setOtherId(sId);
+      }
+    };
+
+    // --- TYPING ---
     const handleTyping = (data: any) => {
       if (data.conversationId.toString() === conversationIdStr.toString() && data.userId !== myId) {
         setOtherIsTyping(data.typing);
       }
     };
 
-    const handleRead = (data) => {
+    // --- LECTURE (LES FLÈCHES) ---
+    const handleRead = (data: any) => {
       if (data.conversationId.toString() === conversationIdStr.toString() && data.userId !== myId) {
         setMessages(prev => prev.map(m => {
-          const isMine = (m.senderId?._id || m.senderId) === myId;
-          if (isMine && !m.readAt) {
-            return { ...m, readAt: new Date().toISOString() };
-          }
-          return m;
+          const isMine = (m.senderId?._id || m.senderId).toString() === myId;
+          return (isMine && !m.readAt) ? { ...m, readAt: new Date().toISOString() } : m;
         }));
       }
     };
 
+    socket.on('userOnlineStatus', handleOnlineStatus);
     socket.on('receiveMessage', handleReceive);
     socket.on('displayTyping', handleTyping);
     socket.on('markMessagesAsRead', handleRead);
 
-    // Charger l'historique
-    api.get(`/messages/conversation/${conversationIdStr}`).then(r => setMessages(r.data));
-
     return () => { 
+      socket.off('userOnlineStatus', handleOnlineStatus);
       socket.off('receiveMessage', handleReceive); 
       socket.off('displayTyping', handleTyping);
       socket.off('markMessagesAsRead', handleRead);
-      socket.off('userOnlineStatus');
     };
-  }, [conversationIdStr, user]);
+  }, [conversationIdStr, user, otherId]); // Important : reboot quand otherId est trouvé
 
   const send = async () => {
     if (!text.trim()) return;
-    const myId = user._id || user.id;
     try {
       socket?.emit('typing', { conversationId: conversationIdStr, userId: myId, typing: false });
       await api.post('/messages', { 
@@ -102,7 +113,7 @@ export default function Chat() {
   };
 
   const renderItem = ({ item }: { item: any }) => {
-    const isMine = (item.senderId?._id || item.senderId) === (user?._id || user?.id);
+    const isMine = (item.senderId?._id || item.senderId).toString() === myId;
     return (
       <View style={[styles.messageRow, isMine ? styles.myRow : styles.theirRow]}>
         <View style={[styles.bubble, isMine ? styles.myBubble : styles.theirBubble]}>
@@ -112,7 +123,7 @@ export default function Chat() {
               <Ionicons 
                 name={item.readAt ? "checkmark-done" : "checkmark"} 
                 size={16} 
-                color={item.readAt ? "#067bbe" : "#999"} 
+                color={item.readAt ? "#4fc3f7" : "#999"} 
               />
             </View>
           )}
@@ -129,29 +140,23 @@ export default function Chat() {
         </TouchableOpacity>
         <View>
           <Text style={styles.headerTitle}>{title || "Discussion"}</Text>
-          {otherIsTyping ? (
-            <Text style={[styles.headerStatus, { color: '#205C3B', fontStyle: 'italic' }]}>en train d'écrire...</Text>
-          ) : (
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <View style={{ 
-                width: 7, 
-                height: 7, 
-                borderRadius: 4, 
-                backgroundColor: isOtherOnline ? '#4CAF50' : '#BDBDBD', 
-                marginRight: 5 
-              }} />
-              <Text style={[styles.headerStatus, { color: isOtherOnline ? '#4CAF50' : '#888' }]}>
-                {isOtherOnline ? "En ligne" : "Hors ligne"}
-              </Text>
-            </View>
-          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ 
+              width: 7, height: 7, borderRadius: 4, 
+              backgroundColor: isOtherOnline ? '#4CAF50' : '#BDBDBD', 
+              marginRight: 5 
+            }} />
+            <Text style={[styles.headerStatus, { color: isOtherOnline ? '#4CAF50' : '#888' }]}>
+              {otherIsTyping ? "en train d'écrire..." : (isOtherOnline ? "En ligne" : "Hors ligne")}
+            </Text>
+          </View>
         </View>
       </View>
 
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
         style={styles.flexContainer}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <FlatList
@@ -171,7 +176,7 @@ export default function Chat() {
               value={text} 
               onChangeText={(v) => {
                 setText(v);
-                socket?.emit('typing', { conversationId: conversationIdStr, userId: user._id || user.id, typing: v.length > 0 });
+                socket?.emit('typing', { conversationId: conversationIdStr, userId: myId, typing: v.length > 0 });
               }} 
               placeholder="Message..."
               multiline

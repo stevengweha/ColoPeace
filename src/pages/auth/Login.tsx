@@ -5,165 +5,146 @@ import {
   TextInput, 
   TouchableOpacity, 
   StyleSheet, 
-  Alert, 
   KeyboardAvoidingView, 
   Platform,
-  ActivityIndicator
+  ActivityIndicator,
+  ScrollView,
+  Keyboard
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../services/api';
 import { connectSocket } from '../../services/socket';
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
-// 🧩 IMPORT DU COMPOSANT CLERK
 import SocialAuth from '../../components/SocialAuth';
 
 const COLORS = {
   primary: '#205C3B',
-  secondary: '#5cb85c',
   background: '#f4f4f9',
   text: '#333333',
   placeholder: '#a0a0a0',
-  shadow: 'rgba(0,0,0,0.1)',
+  error: '#D32F2F',
+  errorBg: '#FFEBEE',
 };
 
 export default function Login({ onLogin, navigation }: { onLogin: (user: any) => void, navigation: any }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // --- LOGIN CLASSIQUE (Email/Password) ---
   const handleLogin = async () => {
+    Keyboard.dismiss();
     if (loading) return;
+    setErrorMsg(null);
+
     if (!email || !password) {
-      return Alert.alert('Erreur', 'Veuillez remplir tous les champs.');
+      setErrorMsg('Veuillez remplir tous les champs.');
+      return;
     }
 
     setLoading(true);
     try {
-      const res = await api.post('/auth/login', { email: email.trim(), password });
+      const res = await api.post('/auth/login', { 
+        email: email.trim().toLowerCase(), 
+        password 
+      });
       const user = res.data.user || res.data;
-
-      // Stockage local
       await AsyncStorage.setItem("@colopeace_user", JSON.stringify(user));
-
-      // Notification à App.tsx pour switcher de Stack
-      if (typeof onLogin === 'function') {
-        onLogin(user);
-      }
-
-      // Connexion Sockets
-      try {
-        connectSocket(user._id || user.id);
-      } catch (e) {
-        console.log("Socket connection error:", e);
-      }
-
+      if (onLogin) onLogin(user);
+      connectSocket(user._id || user.id);
     } catch (err: any) {
-      console.error("Login Error:", err);
-      const errorMessage = err.response?.data?.message;
-      Alert.alert('Erreur', errorMessage || 'Identifiants incorrects.');
+      setErrorMsg(err.response?.data?.message || "Erreur de connexion");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.fullScreen}
-    >
-      <View style={styles.container}>
-        
-        <Ionicons name="home-outline" size={80} color={COLORS.primary} style={styles.logo} />
-        <Text style={styles.title}>Bienvenue chez ColoPeace</Text>
-        <Text style={styles.subtitle}>Connectez-vous pour voir vos tâches de la semaine.</Text>
-
-        {/* INPUT EMAIL */}
-        <View style={styles.inputGroup}>
-          <Ionicons name="mail-outline" size={20} color={COLORS.placeholder} style={styles.icon} />
-          <TextInput 
-            style={styles.input} 
-            placeholder="Email" 
-            placeholderTextColor={COLORS.placeholder}
-            value={email} 
-            onChangeText={setEmail} 
-            autoCapitalize="none" 
-            keyboardType="email-address"
-          />
-        </View>
-
-        {/* INPUT PASSWORD */}
-        <View style={styles.inputGroup}>
-          <Ionicons name="lock-closed-outline" size={20} color={COLORS.placeholder} style={styles.icon} />
-          <TextInput 
-            style={styles.input} 
-            placeholder="Mot de passe" 
-            placeholderTextColor={COLORS.placeholder}
-            value={password} 
-            onChangeText={setPassword} 
-            secureTextEntry
-          />
-        </View>
-
-        {/* BOUTON LOGIN CLASSIQUE */}
-        <TouchableOpacity 
-          style={[styles.button, loading && styles.buttonDisabled]} 
-          onPress={handleLogin} 
-          disabled={loading}
+    <View style={styles.fullScreen}>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        <ScrollView 
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="always"
         >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Se connecter</Text>
+          <Ionicons name="home-outline" size={80} color={COLORS.primary} />
+          <Text style={styles.title}>ColoPeace</Text>
+
+          {errorMsg && (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{errorMsg}</Text>
+            </View>
           )}
-        </TouchableOpacity>
 
-        {/* --- BOUTON GOOGLE (VIA CLERK) --- */}
-        <SocialAuth onLoginSuccess={onLogin} />
+          {/* INPUT EMAIL */}
+          <View style={styles.inputGroup}>
+            <Ionicons name="mail-outline" size={20} color={COLORS.placeholder} />
+            <TextInput 
+              style={styles.input}
+              placeholder="Email"
+              value={email}
+              onChangeText={(t) => { setEmail(t); setErrorMsg(null); }}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              underlineColorAndroid="transparent"
+            />
+          </View>
 
-        {/* LIEN VERS REGISTER */}
-        <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-          <Text style={styles.link}>Pas encore de compte ? Créer un compte</Text>
-        </TouchableOpacity>
+          {/* INPUT PASSWORD */}
+          <View style={styles.inputGroup}>
+            <Ionicons name="lock-closed-outline" size={20} color={COLORS.placeholder} />
+            <TextInput 
+              style={styles.input}
+              placeholder="Mot de passe"
+              value={password}
+              onChangeText={(t) => { setPassword(t); setErrorMsg(null); }}
+              secureTextEntry
+              underlineColorAndroid="transparent"
+            />
+          </View>
 
-      </View>
-    </KeyboardAvoidingView>
+          <TouchableOpacity 
+            style={[styles.button, loading && { opacity: 0.7 }]} 
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Se connecter</Text>}
+          </TouchableOpacity>
+
+          <SocialAuth onLoginSuccess={onLogin} />
+
+          <TouchableOpacity onPress={() => navigation.navigate('Register')} style={{ marginTop: 20 }}>
+            <Text style={{ color: COLORS.primary, fontWeight: '600' }}>Créer un compte</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   fullScreen: { flex: 1, backgroundColor: COLORS.background },
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
-  logo: { marginBottom: 10 },
-  title: { fontSize: 28, fontWeight: '800', marginBottom: 8, textAlign: 'center', color: COLORS.text },
-  subtitle: { fontSize: 14, color: COLORS.placeholder, marginBottom: 40, textAlign: 'center' },
+  scrollContainer: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 25 },
+  title: { fontSize: 24, fontWeight: 'bold', marginVertical: 20, color: COLORS.text },
+  errorBox: { backgroundColor: COLORS.errorBg, padding: 10, borderRadius: 8, width: '100%', marginBottom: 15 },
+  errorText: { color: COLORS.error, textAlign: 'center', fontSize: 13, fontWeight: '600' },
   inputGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
-    borderRadius: 10,
-    marginBottom: 15,
+    width: '100%',
+    height: 60,
+    borderRadius: 12,
     paddingHorizontal: 15,
-    paddingVertical: Platform.OS === 'ios' ? 15 : 5,
-    width: '100%',
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 4 },
+    marginBottom: 15,
+    elevation: 2,
+    shadowColor: '#000',
     shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
+    shadowRadius: 4,
   },
-  icon: { marginRight: 10 },
-  input: { flex: 1, fontSize: 16, color: COLORS.text, height: 45 },
-  button: {
-    backgroundColor: COLORS.primary,
-    padding: 15,
-    borderRadius: 10,
-    width: '100%',
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  buttonText: { color: '#ffffff', fontSize: 18, fontWeight: '700' },
-  buttonDisabled: { backgroundColor: COLORS.secondary, opacity: 0.7 },
-  link: { color: COLORS.primary, fontSize: 14, fontWeight: '600', marginTop: 25, textAlign: 'center' },
+  input: { flex: 1, height: '100%', marginLeft: 10, fontSize: 16, color: '#000' },
+  button: { backgroundColor: COLORS.primary, width: '100%', height: 55, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  buttonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
 });
