@@ -26,7 +26,7 @@ import Profile from "./src/pages/Profile";
 import MyTasksFocus from "./src/pages/Job/MyTasksFocus";
 import api from './src/services/api'; 
 import AdminDashboard from "./src/pages/AdminDashboard";
-import Caisse from "./src/pages/caisse";
+import Caisse from "./src/pages/Caisse";
 import Course from "./src/pages/Achat";
 
 

@@ -2,7 +2,7 @@
 // public/sw.js - Service Worker ColoPeace v12-21
 // ==========================================
 
-const CACHE_NAME = 'colopeace-V1-25/01/2026'; 
+const CACHE_NAME = 'colopeace-V2-25/01/2026'; 
 
 // --- SYNC INTER-APP (SÉCURISÉ) ---
 let lastNotificationTag = null;
