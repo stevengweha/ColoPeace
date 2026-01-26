@@ -113,7 +113,7 @@ export default function Login({ onLogin, navigation }: { onLogin: (user: any) =>
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Se connecter</Text>}
           </TouchableOpacity>
 
-          <SocialAuth onLoginSuccess={onLogin} />
+         {/* <SocialAuth onLoginSuccess={onLogin} /> */}
 
           <TouchableOpacity onPress={() => navigation.navigate('Register')} style={{ marginTop: 20 }}>
             <Text style={{ color: COLORS.primary, fontWeight: '600' }}>Créer un compte</Text>

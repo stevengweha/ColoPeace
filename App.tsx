@@ -185,12 +185,24 @@ function RootNavigation() {
       type: "default",
       backgroundColor: data.type === "chat" ? "#2E86C1" : "#205C3B",
       onPress: () => {
-        if (data.type === "chat") {
-          navigationRef.current?.navigate("Chat", { id: data.conversationId?.toString() });
-        } else {
-          navigationRef.current?.navigate("Tasks");
-        }
+      if (!navigationRef.current) return;
+
+      // 🎯 C'est ici qu'on décide du trajet
+      switch (data.type) {
+        case "chat":
+          navigationRef.current.navigate("Chat", { id: data.conversationId?.toString() });
+          break;
+        case "task":
+        case "task_done":
+          navigationRef.current.navigate("Tasks"); // Ou "Home" selon ta préférence
+          break;
+        case "REMINDER":
+          navigationRef.current.navigate("MyTasksFocus");
+          break;
+        default:
+          navigationRef.current.navigate("Home");
       }
+    }
     });
   };
 

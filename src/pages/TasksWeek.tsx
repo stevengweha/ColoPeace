@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import api from "../services/api";
-import { getSocket } from "../services/socket"; // Ajout import socket
+import { getSocket } from "../services/socket";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import moment from "moment";
 import 'moment/locale/fr';
@@ -39,7 +39,6 @@ export default function TasksWeek({ user }: { user: any }) {
   });
   const [convCount, setConvCount] = useState(0);
   
-  // LOGIQUE DU DIAPORAMA
   const [recentTasks, setRecentTasks] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -51,13 +50,12 @@ export default function TasksWeek({ user }: { user: any }) {
     try {
       const [statsRes, convsRes, allTasksRes] = await Promise.all([
         api.get(`/tasks/user/${userId}/stats`),
-        api.get(`/conversations/user/${userId}`), // Route specifique pour filtrer les messages
+        api.get(`/conversations/user/${userId}`), 
         api.get(`/tasks/week/${moment().isoWeek()}/${moment().isoWeekYear()}`),
       ]);
 
       setStats(statsRes.data);
       
-      // Logique Message : Compte uniquement les conversations avec un message non lu par moi
       const conversations = Array.isArray(convsRes.data) ? convsRes.data : [];
       const unreadTotal = conversations.reduce((acc: number, conv: any) => {
         const lastMsg = conv.lastMessage;
@@ -70,7 +68,6 @@ export default function TasksWeek({ user }: { user: any }) {
       
       setConvCount(unreadTotal);
 
-      // Filtrer : Fait + Photo + PAS en retard
       const successTasks = allTasksRes.data
         .filter((t: any) => t.status === "done" && t.proofImage && t.status !== "late")
         .sort((a: any, b: any) => moment(b.doneAt).diff(moment(a.doneAt)));
@@ -83,7 +80,7 @@ export default function TasksWeek({ user }: { user: any }) {
     }
   }, [userId]);
 
-  // AJOUT ÉCOUTE SOCKET (Temps réel pour la carte message)
+  // ÉCOUTE SOCKET
   useEffect(() => {
     const socket = getSocket();
     if (userId && socket) {
@@ -101,14 +98,19 @@ export default function TasksWeek({ user }: { user: any }) {
     }
   }, [userId, loadDashboardData]);
 
-  // 2️⃣ RÉACTIVITÉ INSTANTANÉE (Dès qu'on arrive sur l'écran)
+  // 2️⃣ CHARGEMENT INITIAL (Avec Spinner)
+  useEffect(() => {
+    loadDashboardData(false);
+  }, []);
+
+  // 3️⃣ RÉACTIVITÉ AU RETOUR / FOCUS (Sans Spinner)
   useFocusEffect(
     useCallback(() => {
-      loadDashboardData();
+      loadDashboardData(true); 
     }, [loadDashboardData])
   );
 
-  // 3️⃣ MISE À JOUR AUTOMATIQUE (Polling toutes les 30 secondes)
+  // POLLING (30s)
   useEffect(() => {
     const interval = setInterval(() => {
       loadDashboardData(true); 
@@ -117,7 +119,7 @@ export default function TasksWeek({ user }: { user: any }) {
     return () => clearInterval(interval);
   }, [loadDashboardData]);
 
-  // 4️⃣ ROTATION DU DIAPORAMA (Toutes les 5 secondes)
+  // ROTATION DIAPORAMA
   useEffect(() => {
     if (recentTasks.length > 1) {
       const timer = setInterval(() => {
@@ -135,7 +137,7 @@ export default function TasksWeek({ user }: { user: any }) {
       icon: "chatbubble-ellipses-outline", 
       value: convCount, 
       route: "Conversations", 
-      color: convCount > 0 ? "#E74C3C" : "#1E88E5" // Change de couleur si non lu
+      color: convCount > 0 ? "#E74C3C" : "#1E88E5" 
     },
     { title: "À faire", icon: stats.late > 0 ? "alert-circle" : "time-outline", value: stats.pending, route: "MyTasksFocus", color: stats.late > 0 ? "#E74C3C" : "#205C3B" },
     { title: "Mes points", icon: "trophy-outline", value: stats.score, route: "Taskshistory", color: "#6A1B9A" },
@@ -154,15 +156,13 @@ export default function TasksWeek({ user }: { user: any }) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-      
       <View style={styles.headerSection}>
-        <Text style={styles.title}>Salut {user?.name || "Coloc"} !</Text>
+        <Text style={styles.title}>Salut {user?.name || "Coloc"} 👋!</Text>
         <Text style={[styles.subtitle, stats.late > 0 && { color: '#E74C3C', fontWeight: 'bold' }]}>
           {stats.late > 0 ? `⚠️ ${stats.late} retard(s) !` : `Tu as ${stats.pending} tâches à faire.`}
         </Text>
       </View>
 
-      {/* 📸 DIAPORAMA AUTO-RÉACTIF */}
       {activeTask && (
         <View style={styles.feedCardContainer}>
           <TouchableOpacity 
@@ -175,7 +175,6 @@ export default function TasksWeek({ user }: { user: any }) {
               style={styles.feedImage} 
               key={activeTask._id} 
             />
-            
             <View style={styles.feedOverlay}>
               <View style={styles.feedTopRow}>
                 <View style={styles.userInfoRow}>
@@ -192,13 +191,11 @@ export default function TasksWeek({ user }: { user: any }) {
                   <Text style={styles.scoreText}>+{activeTask.score || 10} pts</Text>
                 </View>
               </View>
-
               <View style={styles.feedBottomContent}>
                 <Text style={styles.taskNameText} numberOfLines={1}>{activeTask.name}</Text>
               </View>
             </View>
           </TouchableOpacity>
-          
           <View style={styles.paginationDots}>
             {recentTasks.slice(0, 8).map((_, i) => (
               <View key={i} style={[styles.dot, currentIndex === i && styles.activeDot]} />
@@ -229,7 +226,6 @@ const styles = StyleSheet.create({
   headerSection: { marginBottom: 20 },
   title: { fontSize: 26, fontWeight: "900", color: "#1A1A1A" },
   subtitle: { fontSize: 15, color: "#666", marginTop: 4 },
-  
   feedCardContainer: { marginBottom: 25 },
   feedCard: {
     height: 190,
@@ -238,26 +234,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#1A1A1A',
     elevation: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
   },
   feedImage: { width: '100%', height: '100%', opacity: 0.7, position: 'absolute' },
   feedOverlay: { flex: 1, justifyContent: 'space-between', padding: 18, backgroundColor: 'rgba(0,0,0,0.2)' },
   feedTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   userInfoRow: { flexDirection: 'row', alignItems: 'center' },
   userAvatar: { width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: '#FFF', marginRight: 10 },
-  userNameText: { color: '#FFF', fontWeight: 'bold', fontSize: 15, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 4 },
+  userNameText: { color: '#FFF', fontWeight: 'bold', fontSize: 15 },
   feedTime: { color: '#EEE', fontSize: 10 },
   scoreBadge: { backgroundColor: '#FFD700', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
   scoreText: { color: '#000', fontWeight: '900', fontSize: 13 },
   feedBottomContent: { marginTop: 'auto' },
-  taskNameText: { color: '#FFF', fontSize: 22, fontWeight: '900', textTransform: 'uppercase', textShadowColor: 'rgba(0,0,0,0.8)', textShadowRadius: 6 },
-  
+  taskNameText: { color: '#FFF', fontSize: 22, fontWeight: '900', textTransform: 'uppercase' },
   paginationDots: { flexDirection: 'row', justifyContent: 'center', marginTop: 10 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#CCC', marginHorizontal: 3 },
   activeDot: { backgroundColor: '#205C3B', width: 12 },
-
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   tile: { height: 110, borderRadius: 20, padding: 16, marginBottom: 12, justifyContent: 'space-between', elevation: 4 },
   tileHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
