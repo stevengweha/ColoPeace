@@ -34,7 +34,7 @@ exports.sendTaskNew = (recipientEmail, userName, taskTitle) => {
         <p>Tu es responsable de la tâche suivante : <strong style="font-size: 18px; color: #e67e22;">${taskTitle}</strong>.</p>
         <p>Pense à bien prendre une <b>photo de preuve</b> dans l'application quand tu auras fini !</p>
         <br/>
-        <a href="https://ton-app-vercel.app" style="background-color: #205C3B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Voir mes tâches</a>
+        <a href="https://colo-peace-w7sy.vercel.app" style="background-color: #205C3B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Voir mes tâches</a>
         <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
         <small style="color: #888;">ColoPeace - Organisons la vie à la coloc sans stress.</small>
       </div>
@@ -55,7 +55,7 @@ exports.sendTaskReminder = (recipientEmail, userName, taskTitle) => {
             <p>Ceci est un petit rappel amical pour te rappeler que tu as une tâche à accomplir aujourd'hui : <strong style="font-size: 18px; color: #e67e22;">${taskTitle}</strong>.</p>
             <p>N'oublie pas de prendre une <b>photo de preuve</b> dans l'application une fois la tâche terminée !</p>
             <br/>
-            <a href="https://ton-app-vercel.app" style="background-color: #205C3B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Voir mes tâches</a>
+            <a href="https://colo-peace-w7sy.vercel.app" style="background-color: #205C3B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Voir mes tâches</a>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
             <small style="color: #888;">ColoPeace - Organisons la vie à la coloc sans stress.</small>
         </div>
@@ -76,7 +76,7 @@ exports.sendInviteCode = (recipientEmail, code) => {
             <p>tu as été invité à rejoindre la coloc  ColoPeace.</p>
             <p>Utilise le code suivant pour t'inscrire et rejoindre la coloc : <strong style="font-size: 18px; color: #e67e22;">${code}</strong></p>
             <br/>
-            <a href="https://ton-app-vercel.app/" style="background-color: #205C3B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">S'inscrire et rejoindre la coloc</a>
+            <a href="https://colo-peace-w7sy.vercel.app/" style="background-color: #205C3B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">S'inscrire et rejoindre la coloc</a>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
             <small style="color: #888;">ColoPeace - Organisons la vie à la coloc sans stress.</small>
         </div>
