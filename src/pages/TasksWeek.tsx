@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import api from "../services/api";
+import { getSocket } from "../services/socket"; // Ajout import socket
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import moment from "moment";
 import 'moment/locale/fr';
@@ -50,12 +51,24 @@ export default function TasksWeek({ user }: { user: any }) {
     try {
       const [statsRes, convsRes, allTasksRes] = await Promise.all([
         api.get(`/tasks/user/${userId}/stats`),
-        api.get("/conversations"),
+        api.get(`/conversations/user/${userId}`), // Route specifique pour filtrer les messages
         api.get(`/tasks/week/${moment().isoWeek()}/${moment().isoWeekYear()}`),
       ]);
 
       setStats(statsRes.data);
-      setConvCount(convsRes.data?.length || 0);
+      
+      // Logique Message : Compte uniquement les conversations avec un message non lu par moi
+      const conversations = Array.isArray(convsRes.data) ? convsRes.data : [];
+      const unreadTotal = conversations.reduce((acc: number, conv: any) => {
+        const lastMsg = conv.lastMessage;
+        if (!lastMsg) return acc;
+        const senderId = lastMsg.senderId?._id || lastMsg.senderId;
+        const isMe = senderId?.toString() === userId?.toString();
+        const isUnread = !lastMsg.readAt && !isMe;
+        return isUnread ? acc + 1 : acc;
+      }, 0);
+      
+      setConvCount(unreadTotal);
 
       // Filtrer : Fait + Photo + PAS en retard
       const successTasks = allTasksRes.data
@@ -70,6 +83,24 @@ export default function TasksWeek({ user }: { user: any }) {
     }
   }, [userId]);
 
+  // AJOUT ÉCOUTE SOCKET (Temps réel pour la carte message)
+  useEffect(() => {
+    const socket = getSocket();
+    if (userId && socket) {
+      const handleSocketUpdate = () => loadDashboardData(true);
+
+      socket.on(`notification_${userId}`, handleSocketUpdate);
+      socket.on("receiveMessage", handleSocketUpdate);
+      socket.on("markMessagesAsRead", handleSocketUpdate);
+
+      return () => {
+        socket.off(`notification_${userId}`, handleSocketUpdate);
+        socket.off("receiveMessage", handleSocketUpdate);
+        socket.off("markMessagesAsRead", handleSocketUpdate);
+      };
+    }
+  }, [userId, loadDashboardData]);
+
   // 2️⃣ RÉACTIVITÉ INSTANTANÉE (Dès qu'on arrive sur l'écran)
   useFocusEffect(
     useCallback(() => {
@@ -77,10 +108,10 @@ export default function TasksWeek({ user }: { user: any }) {
     }, [loadDashboardData])
   );
 
-  // 3️⃣ MISE À JOUR AUTOMATIQUE (Polling toutes les 30 secondes pour le "temps réel")
+  // 3️⃣ MISE À JOUR AUTOMATIQUE (Polling toutes les 30 secondes)
   useEffect(() => {
     const interval = setInterval(() => {
-      loadDashboardData(true); // "true" pour charger sans afficher l'icône de chargement
+      loadDashboardData(true); 
     }, 30000); 
 
     return () => clearInterval(interval);
@@ -99,7 +130,13 @@ export default function TasksWeek({ user }: { user: any }) {
   const activeTask = recentTasks[currentIndex];
 
   const tiles = useMemo(() => ([
-    { title: "Messages", icon: "chatbubble-ellipses-outline", value: convCount, route: "Conversations", color: "#1E88E5" },
+    { 
+      title: "Messages", 
+      icon: "chatbubble-ellipses-outline", 
+      value: convCount, 
+      route: "Conversations", 
+      color: convCount > 0 ? "#E74C3C" : "#1E88E5" // Change de couleur si non lu
+    },
     { title: "À faire", icon: stats.late > 0 ? "alert-circle" : "time-outline", value: stats.pending, route: "MyTasksFocus", color: stats.late > 0 ? "#E74C3C" : "#205C3B" },
     { title: "Mes points", icon: "trophy-outline", value: stats.score, route: "Taskshistory", color: "#6A1B9A" },
     { title: "Colocs", icon: "people-outline", value: "Voir", route: "Users", color: "#00838F" },
@@ -136,7 +173,7 @@ export default function TasksWeek({ user }: { user: any }) {
             <Image 
               source={{ uri: activeTask.proofImage }} 
               style={styles.feedImage} 
-              key={activeTask._id} // Important pour forcer le rafraîchissement d'image
+              key={activeTask._id} 
             />
             
             <View style={styles.feedOverlay}>
